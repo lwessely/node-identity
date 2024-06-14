@@ -1,6 +1,6 @@
 import knex from "knex"
 import bcrypt from "bcrypt"
-import { Session } from "./session"
+import { Session, SessionInvalidError } from "./session"
 
 export class UserProgramError extends Error {}
 export class UserExistsError extends Error {}
@@ -193,6 +193,12 @@ export class User {
     if (!this.authenticated) {
       throw new UserAuthenticationError(
         `Cannot log out user '${this.username}': Not authenticated.`
+      )
+    }
+
+    if (session.getUserId() !== this.id) {
+      throw new SessionInvalidError(
+        `Cannot log user '${this.username}' out of session: The user is not logged in with the session provided.`
       )
     }
 

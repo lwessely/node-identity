@@ -21,6 +21,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  await User.remove("session-test-user")
   await db.destroy()
 })
 
@@ -110,6 +111,28 @@ test("Gets a user from a session", async () => {
   expect(user.isAuthenticated()).toBe(true)
 })
 
+test("Prevents logging out user from wrong session", async () => {
+  const session = await Session.open(sessionToken)
+  const user = await User.fromSession(session)
+  const wrongSession = await Session.create()
+  const newUser = await User.create("new-session-test-user")
+  await newUser.setPassword("123")
+  await newUser.login(wrongSession, "123")
+
+  try {
+    await user.logout(wrongSession)
+    expect(true).toBe(false)
+  } catch (e) {
+    expect(e).toBeInstanceOf(SessionInvalidError)
+  }
+
+  expect(wrongSession.getUserId()).toBe(newUser.getId())
+  expect(session.getUserId()).toBe(user.getId())
+
+  await User.remove("new-session-test-user")
+  await wrongSession.destroy()
+})
+
 test("Logs out a user", async () => {
   const session = await Session.open(sessionToken)
   const user = await User.fromSession(session)
@@ -121,8 +144,6 @@ test("Logs out a user", async () => {
 
   const sessionCopy = await Session.open(sessionToken)
   expect(sessionCopy.getUserId()).toBe(null)
-
-  await User.remove("session-test-user")
 })
 
 test("Destroys a session", async () => {
