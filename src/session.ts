@@ -87,7 +87,7 @@ export class Session {
 
     if (sessionResult.length === 0) {
       throw new SessionInvalidError(
-        `Cannot open session: Invalid token.`
+        `Failed to open session: Invalid token.`
       )
     }
 
