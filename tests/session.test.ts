@@ -1,21 +1,28 @@
-import { expect, test } from "@jest/globals"
+import { afterAll, beforeAll, expect, test } from "@jest/globals"
 import knex from "knex"
 import { Session, SessionInvalidError } from "../src/session"
 import { User, UserAuthenticationError } from "../src/user"
 
-const db = knex({
-  client: "mysql2",
-  connection: {
-    user: "test",
-    password: "test",
-    host: "127.0.0.1",
-    port: 3306,
-    database: "users_test",
-  },
-})
-
 let sessionId = -1
 let sessionToken: string = ""
+let db: knex.Knex
+
+beforeAll(async () => {
+  db = knex({
+    client: "mysql2",
+    connection: {
+      user: "test",
+      password: "test",
+      host: "127.0.0.1",
+      port: 3306,
+      database: "users_test",
+    },
+  })
+})
+
+afterAll(async () => {
+  await db.destroy()
+})
 
 test("Sets up the session database correctly", async () => {
   await Session.connect(db)
@@ -128,8 +135,4 @@ test("Destroys a session", async () => {
   } catch (e) {
     expect(e).toBeInstanceOf(SessionInvalidError)
   }
-})
-
-test("Closes the database", async () => {
-  await db.destroy()
 })

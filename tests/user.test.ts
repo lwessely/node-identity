@@ -1,4 +1,4 @@
-import { expect, test } from "@jest/globals"
+import { afterAll, beforeAll, expect, test } from "@jest/globals"
 import {
   User,
   UserAuthenticationError,
@@ -6,15 +6,23 @@ import {
 } from "../src/user"
 import knex from "knex"
 
-const db = knex({
-  client: "mysql2",
-  connection: {
-    user: "test",
-    password: "test",
-    host: "127.0.0.1",
-    port: 3306,
-    database: "users_test",
-  },
+let db: knex.Knex
+
+beforeAll(async () => {
+  db = knex({
+    client: "mysql2",
+    connection: {
+      user: "test",
+      password: "test",
+      host: "127.0.0.1",
+      port: 3306,
+      database: "users_test",
+    },
+  })
+})
+
+afterAll(async () => {
+  await db.destroy()
 })
 
 test("Sets up the user database correctly", async () => {
@@ -87,8 +95,4 @@ test("Removes a user", async () => {
   } catch (e) {
     expect(e).toBeInstanceOf(UserInvalidError)
   }
-})
-
-test("Closes the database", async () => {
-  await db.destroy()
 })
