@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "@jest/globals"
-import { Session } from "../src/session"
-import { User } from "../src/user"
+import {
+  Session,
+  SessionExpiredError,
+  SessionInvalidError,
+} from "../src/session"
+import {
+  User,
+  UserAuthenticationError,
+  UserInvalidError,
+} from "../src/user"
 import {
   requireSession,
   requireLogin,
@@ -33,8 +41,79 @@ beforeAll(async () => {
 
   app = express()
 
-  app.use("/session-required/", requireSession())
-  app.use("/login-required/", requireLogin())
+  app.use("/session-required", requireSession())
+
+  app.use(
+    "/session-required-custom-response",
+    requireSession({
+      responseCode: 418,
+      headers: {
+        "Content-type": "text/plain; charset=utf-8",
+      },
+      responseData: "Bad session!",
+    })
+  )
+
+  app.use(
+    "/session-required-custom-callback",
+    requireSession({
+      responseCallback: (
+        req: Request,
+        res: Response,
+        error: Error
+      ) => {
+        res.status(418)
+        if (error instanceof SessionInvalidError) {
+          res.json({ error: "session invalid" })
+          return
+        } else if (error instanceof SessionExpiredError) {
+          res.json({ error: "session expired" })
+          return
+        }
+        throw error
+      },
+    })
+  )
+
+  app.use("/login-required", requireLogin())
+
+  app.use(
+    "/login-required-custom-response",
+    requireLogin({
+      responseCode: 418,
+      headers: {
+        "Content-type": "text/plain; charset=utf-8",
+      },
+      responseData: "Bad user!",
+    })
+  )
+
+  app.use(
+    "/login-required-custom-callback",
+    requireLogin({
+      responseCallback: (
+        req: Request,
+        res: Response,
+        error: Error
+      ) => {
+        res.status(418)
+        if (error instanceof SessionInvalidError) {
+          res.json({ error: "session invalid" })
+          return
+        } else if (error instanceof SessionExpiredError) {
+          res.json({ error: "session expired" })
+          return
+        } else if (error instanceof UserAuthenticationError) {
+          res.json({ error: "user authentication error" })
+          return
+        } else if (error instanceof UserInvalidError) {
+          res.json({ error: "user invalid error" })
+          return
+        }
+        throw error
+      },
+    })
+  )
 
   app.all("/unprotected", (req: Request, res: Response) => {
     res.json({
@@ -52,6 +131,28 @@ beforeAll(async () => {
     })
   })
 
+  app.all(
+    "/session-required-custom-response",
+    (req: Request, res: Response) => {
+      res.json({
+        status: "session ok",
+        session: (req as RequestWithIdentity).session,
+        user: (req as RequestWithIdentity).user,
+      })
+    }
+  )
+
+  app.all(
+    "/session-required-custom-callback",
+    (req: Request, res: Response) => {
+      res.json({
+        status: "session ok",
+        session: (req as RequestWithIdentity).session,
+        user: (req as RequestWithIdentity).user,
+      })
+    }
+  )
+
   app.all("/login-required", (req: Request, res: Response) => {
     res.json({
       status: "user ok",
@@ -59,6 +160,28 @@ beforeAll(async () => {
       user: (req as RequestWithIdentity).user,
     })
   })
+
+  app.all(
+    "/login-required-custom-response",
+    (req: Request, res: Response) => {
+      res.json({
+        status: "user ok",
+        session: (req as RequestWithIdentity).session,
+        user: (req as RequestWithIdentity).user,
+      })
+    }
+  )
+
+  app.all(
+    "/login-required-custom-callback",
+    (req: Request, res: Response) => {
+      res.json({
+        status: "user ok",
+        session: (req as RequestWithIdentity).session,
+        user: (req as RequestWithIdentity).user,
+      })
+    }
+  )
 
   return await new Promise<void>((resolve) => {
     server = app.listen(3000, () => {
@@ -115,6 +238,81 @@ test("Gets 401 from session route", async () => {
   }
 })
 
+test("Gets 418 from session route with custom options", async () => {
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-custom-response"
+    )
+    const data = await response.text()
+    expect(response.status).toBe(418)
+    expect(response.headers.get("Content-type")).toBe(
+      "text/plain; charset=utf-8"
+    )
+    expect(data).toBe("Bad session!")
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-custom-response",
+      { headers: { Authorization: "Bearer 123" } }
+    )
+    const data = await response.text()
+    expect(response.status).toBe(418)
+    expect(response.headers.get("Content-type")).toBe(
+      "text/plain; charset=utf-8"
+    )
+    expect(data).toBe("Bad session!")
+  }
+  {
+    const session = await Session.create({ seconds: -1 })
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-custom-response",
+      {
+        headers: { Authorization: `Bearer ${session.getToken()}` },
+      }
+    )
+    const data = await response.text()
+    expect(response.status).toBe(418)
+    expect(response.headers.get("Content-type")).toBe(
+      "text/plain; charset=utf-8"
+    )
+    expect(data).toBe("Bad session!")
+    await session.destroy()
+  }
+})
+
+test("Gets 418 from session route with custom callback", async () => {
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-custom-callback"
+    )
+    const data = await response.json()
+    expect(response.status).toBe(418)
+    expect(data.error).toBe("session invalid")
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-custom-callback",
+      { headers: { Authorization: "Bearer 123" } }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(418)
+    expect(data.error).toBe("session invalid")
+  }
+  {
+    const session = await Session.create({ seconds: -1 })
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-custom-callback",
+      {
+        headers: { Authorization: `Bearer ${session.getToken()}` },
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(418)
+    expect(data.error).toBe("session expired")
+    await session.destroy()
+  }
+})
+
 test("Gets 200 from session route", async () => {
   const session = await Session.create()
   {
@@ -133,10 +331,74 @@ test("Gets 200 from session route", async () => {
     expect(data.user).toBe(undefined)
   }
   {
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-custom-response",
+      {
+        headers: { Authorization: `Bearer ${session.getToken()}` },
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(200)
+    expect(data.status).toBe("session ok")
+    expect(data.session.id).toBe(session.getId())
+    expect(data.session.token).toBe(session.getToken())
+    expect(data.session.userId).toBe(null)
+    expect(data.user).toBe(undefined)
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-custom-callback",
+      {
+        headers: { Authorization: `Bearer ${session.getToken()}` },
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(200)
+    expect(data.status).toBe("session ok")
+    expect(data.session.id).toBe(session.getId())
+    expect(data.session.token).toBe(session.getToken())
+    expect(data.session.userId).toBe(null)
+    expect(data.user).toBe(undefined)
+  }
+  {
     const user = await User.get("route-test-user")
     await user.login(session, "test-password")
     const response = await fetch(
       "http://127.0.0.1:3000/session-required",
+      {
+        headers: { Authorization: `Bearer ${session.getToken()}` },
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(200)
+    expect(data.status).toBe("session ok")
+    expect(data.session.id).toBe(session.getId())
+    expect(data.session.token).toBe(session.getToken())
+    expect(data.session.userId).toBe(user.getId())
+    expect(data.user).toBe(undefined)
+  }
+  {
+    const user = await User.get("route-test-user")
+    await user.login(session, "test-password")
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-custom-response",
+      {
+        headers: { Authorization: `Bearer ${session.getToken()}` },
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(200)
+    expect(data.status).toBe("session ok")
+    expect(data.session.id).toBe(session.getId())
+    expect(data.session.token).toBe(session.getToken())
+    expect(data.session.userId).toBe(user.getId())
+    expect(data.user).toBe(undefined)
+  }
+  {
+    const user = await User.get("route-test-user")
+    await user.login(session, "test-password")
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-custom-callback",
       {
         headers: { Authorization: `Bearer ${session.getToken()}` },
       }
@@ -199,6 +461,120 @@ test("Gets 403 from user route", async () => {
     const data = await response.json()
     expect(response.status).toBe(403)
     expect(data.error).toBe(403)
+  }
+  await session.destroy()
+})
+
+test("Gets 403 from user route with custom response", async () => {
+  const session = await Session.create()
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-custom-response"
+    )
+    const data = await response.text()
+    expect(response.status).toBe(418)
+    expect(response.headers.get("Content-type")).toBe(
+      "text/plain; charset=utf-8"
+    )
+    expect(data).toBe("Bad user!")
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-custom-response",
+      {
+        headers: { Authorization: `Bearer abc` },
+      }
+    )
+    const data = await response.text()
+    expect(response.status).toBe(418)
+    expect(response.headers.get("Content-type")).toBe(
+      "text/plain; charset=utf-8"
+    )
+    expect(data).toBe("Bad user!")
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-custom-response",
+      {
+        headers: { Authorization: `Bearer ${session.getToken()}` },
+      }
+    )
+    const data = await response.text()
+    expect(response.status).toBe(418)
+    expect(response.headers.get("Content-type")).toBe(
+      "text/plain; charset=utf-8"
+    )
+    expect(data).toBe("Bad user!")
+  }
+  {
+    const user = await User.get("route-test-user")
+    const expiredSession = await Session.create({ seconds: -1 })
+    user.login(expiredSession, "test-password")
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-custom-response",
+      {
+        headers: {
+          Authorization: `Bearer ${expiredSession.getToken()}`,
+        },
+      }
+    )
+    const data = await response.text()
+    expect(response.status).toBe(418)
+    expect(response.headers.get("Content-type")).toBe(
+      "text/plain; charset=utf-8"
+    )
+    expect(data).toBe("Bad user!")
+  }
+  await session.destroy()
+})
+
+test("Gets 403 from user route with custom callback", async () => {
+  const session = await Session.create()
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-custom-callback"
+    )
+    const data = await response.json()
+    expect(response.status).toBe(418)
+    expect(data.error).toBe("session invalid")
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-custom-callback",
+      {
+        headers: { Authorization: `Bearer abc` },
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(418)
+    expect(data.error).toBe("session invalid")
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-custom-callback",
+      {
+        headers: { Authorization: `Bearer ${session.getToken()}` },
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(418)
+    expect(data.error).toBe("user authentication error")
+  }
+  {
+    const user = await User.get("route-test-user")
+    const expiredSession = await Session.create({ seconds: -1 })
+    user.login(expiredSession, "test-password")
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-custom-callback",
+      {
+        headers: {
+          Authorization: `Bearer ${expiredSession.getToken()}`,
+        },
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(418)
+    expect(data.error).toBe("session expired")
   }
   await session.destroy()
 })

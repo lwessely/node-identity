@@ -145,5 +145,4 @@ app.get("/login-required", (req: Request, res: Response) => {
 ```
 
 ## ToDo
-- Write tests for custom response data, response codes, headers, and response callback in routes.require*
 - Renewal tokens should be issued, so sessions can be renewed for a period of time after expiration
