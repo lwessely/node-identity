@@ -27,7 +27,7 @@ export class Session {
     private expirationDate: Date | null
   ) {}
 
-  private static timeStructToMs(t: Lifetime): number {
+  private static lifetimeToMs(t: Lifetime): number {
     const completeTime: Lifetime = {
       years: 0,
       months: 0,
@@ -117,7 +117,7 @@ export class Session {
   ): Promise<Session> {
     const db = this.ensureDatabaseConnection()
     const token = this.generateToken(20)
-    const lifetimeMs = this.timeStructToMs(lifetime)
+    const lifetimeMs = this.lifetimeToMs(lifetime)
     const expirationDate = new Date(new Date().getTime() + lifetimeMs)
     const id = await db("session_tokens").insert({
       session_token: token,
@@ -193,5 +193,15 @@ export class Session {
       .update({ user_id: null })
       .where({ id: this.id })
     this.userId = null
+  }
+
+  async updateLifetime(lifetime: Lifetime) {
+    const expirationDate = new Date(
+      new Date().getTime() + Session.lifetimeToMs(lifetime)
+    )
+    await this.db("session_tokens")
+      .update({ expires: expirationDate })
+      .where({ id: this.id })
+    this.expirationDate = expirationDate
   }
 }
