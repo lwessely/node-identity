@@ -461,6 +461,7 @@ test("Gets 403 from user route", async () => {
     const data = await response.json()
     expect(response.status).toBe(403)
     expect(data.error).toBe(403)
+    await expiredSession.destroy()
   }
   await session.destroy()
 })
@@ -524,6 +525,7 @@ test("Gets 403 from user route with custom response", async () => {
       "text/plain; charset=utf-8"
     )
     expect(data).toBe("Bad user!")
+    await expiredSession.destroy()
   }
   await session.destroy()
 })
@@ -575,6 +577,7 @@ test("Gets 403 from user route with custom callback", async () => {
     const data = await response.json()
     expect(response.status).toBe(418)
     expect(data.error).toBe("session expired")
+    await expiredSession.destroy()
   }
   await session.destroy()
 })
