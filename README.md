@@ -124,7 +124,7 @@ import express, { Request, Response } from "express"
 import { requireSession, RequestWithIdentity } from "@lwtw/identity"
 
 app = express()
-app.use("/session-required/", requireSession()) // This will repsond with an error if the request includes no valid session token
+app.use("/session-required/", requireSession()) // This will respond with an error if the request includes no valid session token
 
 app.get("/session-required", (req: Request, res: Response) => {
   const { session } = req as RequestWithIdentity // Get the session from the request
@@ -137,7 +137,7 @@ import express, { Request, Response } from "express"
 import { requireLogin, RequestWithIdentity } from "@lwtw/identity"
 
 app = express()
-app.use("/login-required/", requireLogin()) // This will repsond with an error if the request includes no valid session token with a logged in user
+app.use("/login-required/", requireLogin()) // This will respond with an error if the request includes no valid session token with a logged in user
 
 app.get("/login-required", (req: Request, res: Response) => {
   const { session, user } = req as RequestWithIdentity // Get the session and user from the request
