@@ -9,6 +9,8 @@ import {
   Session,
   SessionInvalidError,
   SessionProgramError,
+  SessionExpiredError,
+  Lifetime,
 } from "./session"
 import {
   RequireGuardOptions,
@@ -27,8 +29,10 @@ export {
   Session,
   SessionInvalidError,
   SessionProgramError,
+  SessionExpiredError,
   RequireGuardOptions,
   RequestWithIdentity,
+  Lifetime,
   getSessionFromRequest,
   requireSession,
   requireLogin,

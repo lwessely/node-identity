@@ -4,7 +4,11 @@ import {
   NextFunction,
   RequestHandler,
 } from "express"
-import { Session, SessionInvalidError } from "./session"
+import {
+  Session,
+  SessionExpiredError,
+  SessionInvalidError,
+} from "./session"
 import {
   User,
   UserAuthenticationError,
@@ -15,6 +19,11 @@ export interface RequireGuardOptions {
   responseCode?: number
   responseData?: { [key: string]: any } | string | Buffer
   headers?: { [key: string]: string }
+  responseCallback?: (
+    req: Request,
+    res: Response,
+    error: Error
+  ) => Promise<void> | void
 }
 
 export interface RequestWithIdentity extends Request {
@@ -49,11 +58,12 @@ export function requireSession(
     res: Response,
     next: NextFunction
   ): Promise<void> => {
-    const userOptions = {
+    const userOptions: RequireGuardOptions = {
       responseCode: 401,
       responseData: {
         error: options.responseCode ?? 401,
-        description: "Invalid or missing session token.",
+        description:
+          "Invalid or missing session toke, or session has expired.",
       },
       headers: { "Content-type": "application/json" },
     }
@@ -64,11 +74,27 @@ export function requireSession(
       ;(req as RequestWithIdentity).session = session
       next()
     } catch (e) {
-      if (!(e instanceof SessionInvalidError)) {
+      const { responseCallback } = userOptions
+
+      if (responseCallback) {
+        const result = responseCallback(req, res, e as Error)
+        if (result instanceof Promise) {
+          await result
+        }
+        return
+      }
+
+      if (
+        !(
+          e instanceof SessionInvalidError ||
+          e instanceof SessionExpiredError
+        )
+      ) {
         throw e
       }
+
       const { responseCode, responseData, headers } = userOptions
-      res.status(responseCode)
+      res.status(responseCode as number)
       res.set(headers)
       res.send(responseData)
     }
@@ -83,7 +109,7 @@ export function requireLogin(
     res: Response,
     next: NextFunction
   ): Promise<void> => {
-    const userOptions = {
+    const userOptions: RequireGuardOptions = {
       responseCode: 403,
       responseData: {
         error: options.responseCode ?? 403,
@@ -92,16 +118,30 @@ export function requireLogin(
       headers: { "Content-type": "application/json" },
     }
     Object.assign(userOptions, options)
+    const { responseCallback } = userOptions
 
     let session: Session | undefined
     try {
       session = await getSessionFromRequest(req)
     } catch (e) {
-      if (!(e instanceof SessionInvalidError)) {
+      if (responseCallback) {
+        const result = responseCallback(req, res, e as Error)
+        if (result instanceof Promise) {
+          await result
+        }
+        return
+      }
+
+      if (
+        !(
+          e instanceof SessionInvalidError ||
+          e instanceof SessionExpiredError
+        )
+      ) {
         throw e
       }
       const { responseCode, responseData, headers } = userOptions
-      res.status(responseCode)
+      res.status(responseCode as number)
       res.set(headers)
       res.send(responseData)
       return
@@ -113,6 +153,14 @@ export function requireLogin(
       ;(req as RequestWithIdentity).user = user
       next()
     } catch (e) {
+      if (responseCallback) {
+        const result = responseCallback(req, res, e as Error)
+        if (result instanceof Promise) {
+          await result
+        }
+        return
+      }
+
       if (
         !(
           e instanceof UserInvalidError ||
@@ -121,8 +169,9 @@ export function requireLogin(
       ) {
         throw e
       }
+
       const { responseCode, responseData, headers } = userOptions
-      res.status(responseCode)
+      res.status(responseCode as number)
       res.set(headers)
       res.send(responseData)
     }

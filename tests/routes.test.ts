@@ -100,6 +100,19 @@ test("Gets 401 from session route", async () => {
     expect(response.status).toBe(401)
     expect(data.error).toBe(401)
   }
+  {
+    const session = await Session.create({ seconds: -1 })
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required",
+      {
+        headers: { Authorization: `Bearer ${session.getToken()}` },
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(401)
+    expect(data.error).toBe(401)
+    await session.destroy()
+  }
 })
 
 test("Gets 200 from session route", async () => {
@@ -114,11 +127,9 @@ test("Gets 200 from session route", async () => {
     const data = await response.json()
     expect(response.status).toBe(200)
     expect(data.status).toBe("session ok")
-    expect(JSON.parse(JSON.stringify(data.session))).toStrictEqual({
-      id: session.getId(),
-      token: session.getToken(),
-      userId: null,
-    })
+    expect(data.session.id).toBe(session.getId())
+    expect(data.session.token).toBe(session.getToken())
+    expect(data.session.userId).toBe(null)
     expect(data.user).toBe(undefined)
   }
   {
@@ -133,11 +144,9 @@ test("Gets 200 from session route", async () => {
     const data = await response.json()
     expect(response.status).toBe(200)
     expect(data.status).toBe("session ok")
-    expect(JSON.parse(JSON.stringify(data.session))).toStrictEqual({
-      id: session.getId(),
-      token: session.getToken(),
-      userId: user.getId(),
-    })
+    expect(data.session.id).toBe(session.getId())
+    expect(data.session.token).toBe(session.getToken())
+    expect(data.session.userId).toBe(user.getId())
     expect(data.user).toBe(undefined)
   }
   await session.destroy()
@@ -175,6 +184,22 @@ test("Gets 403 from user route", async () => {
     expect(response.status).toBe(403)
     expect(data.error).toBe(403)
   }
+  {
+    const user = await User.get("route-test-user")
+    const expiredSession = await Session.create({ seconds: -1 })
+    user.login(expiredSession, "test-password")
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required",
+      {
+        headers: {
+          Authorization: `Bearer ${expiredSession.getToken()}`,
+        },
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(403)
+    expect(data.error).toBe(403)
+  }
   await session.destroy()
 })
 
@@ -191,15 +216,11 @@ test("Gets 200 from user route", async () => {
   const data = await response.json()
   expect(response.status).toBe(200)
   expect(data.status).toBe("user ok")
-  expect(JSON.parse(JSON.stringify(data.session))).toStrictEqual({
-    id: session.getId(),
-    token: session.getToken(),
-    userId: user.getId(),
-  })
-  expect(JSON.parse(JSON.stringify(data.user))).toStrictEqual({
-    id: user.getId(),
-    username: user.getUsername(),
-    authenticated: user.isAuthenticated(),
-  })
+  expect(data.session.id).toBe(session.getId())
+  expect(data.session.token).toBe(session.getToken())
+  expect(data.session.userId).toBe(user.getId())
+  expect(data.user.id).toBe(user.getId())
+  expect(data.user.username).toBe(user.getUsername())
+  expect(data.user.authenticated).toBe(user.isAuthenticated())
   await session.destroy()
 })

@@ -11,6 +11,7 @@ import {
   Session,
   SessionInvalidError,
   SessionProgramError,
+  SessionExpiredError,
 } from "../src/session"
 import * as routes from "../src/routes"
 
@@ -25,6 +26,7 @@ test("Exports members correctly", () => {
   expect(identity.Session).toBe(Session)
   expect(identity.SessionInvalidError).toBe(SessionInvalidError)
   expect(identity.SessionProgramError).toBe(SessionProgramError)
+  expect(identity.SessionExpiredError).toBe(SessionExpiredError)
   expect(identity.getSessionFromRequest).toBe(
     routes.getSessionFromRequest
   )

@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "@jest/globals"
 import knex from "knex"
-import { Session, SessionInvalidError } from "../src/session"
+import {
+  Session,
+  SessionExpiredError,
+  SessionInvalidError,
+} from "../src/session"
 import { User, UserAuthenticationError } from "../src/user"
 
 let sessionId = -1
@@ -30,7 +34,10 @@ test("Sets up the session database correctly", async () => {
   const sessionSchemaResult = await db
     .select("schema_version")
     .from("session_schema")
-  expect(sessionSchemaResult).toStrictEqual([{ schema_version: 1 }])
+  expect(sessionSchemaResult).toStrictEqual([
+    { schema_version: 1 },
+    { schema_version: 2 },
+  ])
   expect(await db.schema.hasTable("session_tokens")).toBe(true)
 })
 
@@ -39,7 +46,10 @@ test("Session database is not set up twice accidentally", async () => {
   const sessionSchemaResult = await db
     .select("schema_version")
     .from("session_schema")
-  expect(sessionSchemaResult).toStrictEqual([{ schema_version: 1 }])
+  expect(sessionSchemaResult).toStrictEqual([
+    { schema_version: 1 },
+    { schema_version: 2 },
+  ])
 })
 
 test("Creates a session", async () => {
@@ -53,10 +63,24 @@ test("Creates a session", async () => {
 })
 
 test("Opens a session", async () => {
-  const session = await Session.open(sessionToken)
-  expect(session.getId()).toBe(sessionId)
-  expect(session.getUserId()).toBe(null)
-  expect(session.getToken()).toBe(sessionToken)
+  {
+    const session = await Session.open(sessionToken)
+    expect(session.getId()).toBe(sessionId)
+    expect(session.getUserId()).toBe(null)
+    expect(session.getToken()).toBe(sessionToken)
+  }
+  {
+    const session = await Session.create({ seconds: -1 })
+
+    try {
+      await Session.open(session.getToken())
+      expect(true).toBe(false)
+    } catch (e) {
+      expect(e).toBeInstanceOf(SessionExpiredError)
+    }
+
+    await session.destroy()
+  }
 })
 
 test("Sets a session's user id", async () => {
@@ -144,6 +168,69 @@ test("Logs out a user", async () => {
 
   const sessionCopy = await Session.open(sessionToken)
   expect(sessionCopy.getUserId()).toBe(null)
+})
+
+test("Sets and gets a session's expiration date", async () => {
+  const session = await Session.create({
+    years: 1,
+    months: 3,
+    weeks: 2,
+    days: 5,
+    hours: 3,
+    minutes: 15,
+    seconds: 40,
+    milliseconds: 400,
+  })
+  const expectedExpirationDate = new Date(
+    new Date().getTime() + 41094940400
+  )
+
+  {
+    const expirationDate = session.getExpirationDate()
+
+    expect(expirationDate?.getFullYear()).toBe(
+      expectedExpirationDate.getFullYear()
+    )
+    expect(expirationDate?.getMonth()).toBe(
+      expectedExpirationDate.getMonth()
+    )
+    expect(expirationDate?.getDate()).toBe(
+      expectedExpirationDate.getDate()
+    )
+    expect(expirationDate?.getHours()).toBe(
+      expectedExpirationDate.getHours()
+    )
+    expect(expirationDate?.getMinutes()).toBe(
+      expectedExpirationDate.getMinutes()
+    )
+    expect(expirationDate?.getSeconds()).toBe(
+      expectedExpirationDate.getSeconds()
+    )
+  }
+  {
+    const sessionCopy = await Session.open(session.getToken())
+    const expirationDate = sessionCopy.getExpirationDate()
+
+    expect(expirationDate?.getFullYear()).toBe(
+      expectedExpirationDate.getFullYear()
+    )
+    expect(expirationDate?.getMonth()).toBe(
+      expectedExpirationDate.getMonth()
+    )
+    expect(expirationDate?.getDate()).toBe(
+      expectedExpirationDate.getDate()
+    )
+    expect(expirationDate?.getHours()).toBe(
+      expectedExpirationDate.getHours()
+    )
+    expect(expirationDate?.getMinutes()).toBe(
+      expectedExpirationDate.getMinutes()
+    )
+    expect(expirationDate?.getSeconds()).toBe(
+      expectedExpirationDate.getSeconds()
+    )
+  }
+  await session.destroy()
 })
 
 test("Destroys a session", async () => {

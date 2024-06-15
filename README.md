@@ -27,13 +27,14 @@ User.connect(db)
 
 ### Create a new session and get the session token
 ```ts
-const session = await Session.create() // Create new session
+const session = await Session.create() // Create new session that expires after 30 days
 const sessionToken = session.getToken() // Get session token
+const longLivedSession = await Session.create({ months: 3, days: 15 }) // Create a new session that expires after 3 months and 15 days
 ```
 
 ### Open an existing session
 ```ts
-const session = await Session.open(sessionToken) // Open an existing session
+const session = await Session.open(sessionToken) // Open an existing session - This will throw if the session token is invalid, or the session has expired
 ```
 
 ### Destroy a session
@@ -144,5 +145,5 @@ app.get("/login-required", (req: Request, res: Response) => {
 ```
 
 ## ToDo
-- Sessions should have an expiration date
+- Write tests for custom response data, response codes, headers, and response callback in routes.require*
 - Renewal tokens should be issued, so sessions can be renewed for a period of time after expiration
