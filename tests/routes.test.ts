@@ -114,7 +114,7 @@ test("Gets 200 from session route", async () => {
     const data = await response.json()
     expect(response.status).toBe(200)
     expect(data.status).toBe("session ok")
-    expect(data.session).toEqual({
+    expect(JSON.parse(JSON.stringify(data.session))).toStrictEqual({
       id: session.getId(),
       token: session.getToken(),
       userId: null,
@@ -133,7 +133,7 @@ test("Gets 200 from session route", async () => {
     const data = await response.json()
     expect(response.status).toBe(200)
     expect(data.status).toBe("session ok")
-    expect(data.session).toEqual({
+    expect(JSON.parse(JSON.stringify(data.session))).toStrictEqual({
       id: session.getId(),
       token: session.getToken(),
       userId: user.getId(),
@@ -191,12 +191,12 @@ test("Gets 200 from user route", async () => {
   const data = await response.json()
   expect(response.status).toBe(200)
   expect(data.status).toBe("user ok")
-  expect(data.session).toEqual({
+  expect(JSON.parse(JSON.stringify(data.session))).toStrictEqual({
     id: session.getId(),
     token: session.getToken(),
     userId: user.getId(),
   })
-  expect(data.user).toEqual({
+  expect(JSON.parse(JSON.stringify(data.user))).toStrictEqual({
     id: user.getId(),
     username: user.getUsername(),
     authenticated: user.isAuthenticated(),

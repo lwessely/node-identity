@@ -31,7 +31,7 @@ export class User {
       .select("schema_version")
       .orderBy("schema_version", "desc")
       .limit(1)
-    let schemaVersion = schemaVersionResult[0] ?? 0
+    let schemaVersion = schemaVersionResult[0]?.schema_version ?? 0
 
     if (schemaVersion < 1) {
       await db.schema.createTable("user_accounts", (table) => {
@@ -39,6 +39,26 @@ export class User {
         table.string("username").notNullable().unique()
         table.string("password")
         table.index("username", "user_accounts_username_index")
+      })
+      await db.insert({}).into("user_schema")
+    }
+
+    if (schemaVersion < 2) {
+      await db.schema.createTable("user_data", (table) => {
+        table.increments("id")
+        table
+          .integer("user_id")
+          .unsigned()
+          .notNullable()
+          .references("id")
+          .inTable("user_accounts")
+          .onDelete("CASCADE")
+        table.string("key").notNullable()
+        table.string("value").notNullable()
+        table
+          .string("type", 7)
+          .notNullable()
+          .checkIn(["string", "number", "boolean"])
       })
       await db.insert({}).into("user_schema")
     }
@@ -216,5 +236,60 @@ export class User {
         "Action aborted: User is not authenticated."
       )
     }
+  }
+
+  async setItems(data: { [key: string]: string | number | boolean }) {
+    await this.db.transaction(async (trx) => {
+      for (const [key, value] of Object.entries(data)) {
+        let type = typeof value
+        await trx
+          .del()
+          .from("user_data")
+          .where({ user_id: this.id, key })
+        await trx("user_data").insert({
+          user_id: this.id,
+          key,
+          value: `${value}`,
+          type,
+        })
+      }
+    })
+  }
+
+  async removeItems(keys: string[]) {
+    await this.db
+      .del()
+      .from("user_data")
+      .whereIn("key", keys)
+      .andWhere({ user_id: this.id })
+  }
+
+  async getItems(keys: string[]): Promise<{
+    [key: string]: string | number | boolean
+  }> {
+    const dataResult = await this.db
+      .select("key", "value", "type")
+      .from("user_data")
+      .whereIn("key", keys)
+      .andWhere({ user_id: this.id })
+    const result: { [key: string]: string | number | boolean } = {}
+
+    for (const row of dataResult) {
+      const { key, type } = row
+      let { value } = row
+
+      switch (type) {
+        case "number":
+          value = parseFloat(value)
+          break
+        case "boolean":
+          value = value === "true"
+          break
+      }
+
+      result[key] = value
+    }
+
+    return result
   }
 }

@@ -104,6 +104,14 @@ const user = await User.fromSession(session) // Get the session user
 await user.logout(session) // Log out the user from this session
 ```
 
+### Deal with user data
+```ts
+const user = await User.get("my-user") // Get a user
+await user.setItems({ firstName: "Jane", lastName: "Doe", age: 28 }) // set values for custom keys 'firstName', 'lastName', and 'age'
+const { firstName, age } = await user.getItems(["firstName", "age"]) // Get values for keys 'firstName' and 'age'
+await user.removeItems(["firstName", "lastName"]) // Remove items 'firstName' and 'lastName'
+```
+
 ## Express middleware
 
 For the middleware to do its job, the session token needs to be provided as Bearer token in the
@@ -138,4 +146,3 @@ app.get("/login-required", (req: Request, res: Response) => {
 ## ToDo
 - Sessions should have an expiration date
 - Renewal tokens should be issued, so sessions can be renewed for a period of time after expiration
-- Users should be able to have arbitrary data associated with them

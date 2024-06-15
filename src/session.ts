@@ -28,7 +28,7 @@ export class Session {
       .select("schema_version")
       .orderBy("schema_version", "desc")
       .limit(1)
-    let schemaVersion = schemaVersionResult[0] ?? 0
+    let schemaVersion = schemaVersionResult[0]?.schema_version ?? 0
 
     if (schemaVersion < 1) {
       await db.schema.createTable("session_tokens", (table) => {

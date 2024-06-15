@@ -30,7 +30,10 @@ test("Sets up the user database correctly", async () => {
   const userSchemaResult = await db
     .select("schema_version")
     .from("user_schema")
-  expect(userSchemaResult).toStrictEqual([{ schema_version: 1 }])
+  expect(userSchemaResult).toStrictEqual([
+    { schema_version: 1 },
+    { schema_version: 2 },
+  ])
   expect(await db.schema.hasTable("user_accounts")).toBe(true)
 })
 
@@ -39,7 +42,10 @@ test("User database is not set up twice accidentally", async () => {
   const userSchemaResult = await db
     .select("schema_version")
     .from("user_schema")
-  expect(userSchemaResult).toStrictEqual([{ schema_version: 1 }])
+  expect(userSchemaResult).toStrictEqual([
+    { schema_version: 1 },
+    { schema_version: 2 },
+  ])
 })
 
 test("Creates a user", async () => {
@@ -86,11 +92,73 @@ test("Authenticates a user", async () => {
   expect(user.isAuthenticated()).toBe(true)
 })
 
+test("Associates data with a user", async () => {
+  const user1 = await User.get("test-user")
+  await user1.setItems({ lorem: 1, ipsum: "user1-data", dolor: true })
+  await user1.setItems({
+    lorem: 2,
+    amet: "123",
+    consectetur: "xyz",
+    adipiscing: false,
+  })
+
+  const user2 = await User.create("second-test-user")
+  await user2.setItems({
+    lorem: 5,
+    ipsum: "second-user-data",
+    dolor: false,
+  })
+  await user2.setItems({
+    ipsum: "second-user-data-changed",
+    sit: "foo",
+    amet: "bar",
+    foo: "baz",
+  })
+})
+
+test("Deletes data associated with a user", async () => {
+  const user1 = await User.get("test-user")
+  await user1.removeItems(["amet"])
+
+  const user2 = await User.get("second-test-user")
+  await user2.removeItems(["foo"])
+})
+
+test("Gets data associated with a user", async () => {
+  const user1 = await User.get("test-user")
+  expect(
+    await user1.getItems(["lorem", "ipsum", "dolor", "amet"])
+  ).toStrictEqual({
+    lorem: 2,
+    ipsum: "user1-data",
+    dolor: true,
+  })
+
+  const user2 = await User.get("second-test-user")
+  expect(
+    await user2.getItems(["lorem", "ipsum", "dolor", "amet", "foo"])
+  ).toStrictEqual({
+    lorem: 5,
+    ipsum: "second-user-data-changed",
+    dolor: false,
+    amet: "bar",
+  })
+})
+
 test("Removes a user", async () => {
   await User.remove("test-user")
 
   try {
     await User.get("test-user")
+    expect(true).toBe(false)
+  } catch (e) {
+    expect(e).toBeInstanceOf(UserInvalidError)
+  }
+
+  await User.remove("second-test-user")
+
+  try {
+    await User.get("second-test-user")
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(UserInvalidError)
