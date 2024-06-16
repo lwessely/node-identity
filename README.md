@@ -167,7 +167,7 @@ export interface RequireGuardOptions {
 
 ## Notes on caching and access control security
 When you get or create a user, or open or create a session, some data is cached in the resulting object. You can assume
-that any synchronous method returning data for a session or user (e.g. user.getUsername(), session.getExpirationDate())
+that any synchronous method returning data for a session or user (e.g. ```user.getUsername()```, ```session.getExpirationDate()```)
 may return stale information. Consider the following example:
 
 ```ts
