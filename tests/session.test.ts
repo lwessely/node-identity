@@ -4,6 +4,7 @@ import {
   Session,
   SessionExpiredError,
   SessionInvalidError,
+  SessionRenewalError,
 } from "../src/session"
 import { User, UserAuthenticationError } from "../src/user"
 
@@ -37,6 +38,7 @@ test("Sets up the session database correctly", async () => {
   expect(sessionSchemaResult).toStrictEqual([
     { schema_version: 1 },
     { schema_version: 2 },
+    { schema_version: 3 },
   ])
   expect(await db.schema.hasTable("session_tokens")).toBe(true)
 })
@@ -49,6 +51,7 @@ test("Session database is not set up twice accidentally", async () => {
   expect(sessionSchemaResult).toStrictEqual([
     { schema_version: 1 },
     { schema_version: 2 },
+    { schema_version: 3 },
   ])
 })
 
@@ -170,19 +173,27 @@ test("Logs out a user", async () => {
   expect(sessionCopy.getUserId()).toBe(null)
 })
 
-test("Sets and gets a session's expiration date", async () => {
-  const session = await Session.create({
-    years: 1,
-    months: 3,
-    weeks: 2,
-    days: 5,
-    hours: 3,
-    minutes: 15,
-    seconds: 40,
-    milliseconds: 400,
-  })
+test("Sets and gets a session's expiration and renewal date", async () => {
+  const session = await Session.create(
+    {
+      years: 1,
+      months: 3,
+      weeks: 2,
+      days: 5,
+      hours: 3,
+      minutes: 15,
+      seconds: 40,
+      milliseconds: 400,
+    },
+    {
+      days: 2,
+    }
+  )
   const expectedExpirationDate = new Date(
     new Date().getTime() + 41094940400
+  )
+  const expectedRenewableUntilDate = new Date(
+    expectedExpirationDate.getTime() + 2 * 24 * 60 * 60 * 1000
   )
 
   {
@@ -191,39 +202,68 @@ test("Sets and gets a session's expiration date", async () => {
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
     ).toBeLessThan(1000)
+    const renewableUntilDate = session.getRenewableUntilDate()
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
+    ).toBeLessThan(1000)
   }
   {
     const sessionCopy = await Session.open(session.getToken())
-    const expirationDate = sessionCopy.getExpirationDate()
 
+    const expirationDate = sessionCopy.getExpirationDate()
     expect(
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
+
+    const renewableUntilDate = sessionCopy.getRenewableUntilDate()
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
     ).toBeLessThan(1000)
   }
   await session.destroy()
 })
 
-test("Changes a session's lifespan", async () => {
-  const session = await Session.create({ days: 0 })
+test("Changes a session's lifespan and renewal period", async () => {
+  const session = await Session.create({ days: 1 }, { days: 2 })
 
   {
-    const expectedExpirationDate = new Date()
-    const expirationDate = session.getExpirationDate()
-    expect(
-      expectedExpirationDate.getTime() -
-        (expirationDate?.getTime() as number)
-    ).toBeLessThan(1000)
-  }
-  {
-    await session.updateLifetime({ days: 5 })
     const expectedExpirationDate = new Date(
-      new Date().getTime() + 5 * 24 * 60 * 60 * 1000
+      new Date().getTime() + 24 * 60 * 60 * 1000
+    )
+    const expectedRenewableUntilDate = new Date(
+      expectedExpirationDate.getTime() + 2 * 24 * 60 * 60 * 1000
     )
     const expirationDate = session.getExpirationDate()
     expect(
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
+    const renewableUntilDate = session.getRenewableUntilDate()
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
+    ).toBeLessThan(1000)
+  }
+  {
+    await session.updateLifetime({ days: 5 }, { days: 15 })
+    const expectedExpirationDate = new Date(
+      new Date().getTime() + 5 * 24 * 60 * 60 * 1000
+    )
+    const expectedRenewableUntilDate = new Date(
+      expectedExpirationDate.getTime() + 15 * 24 * 60 * 60 * 1000
+    )
+    const expirationDate = session.getExpirationDate()
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
+    const renewableUntilDate = session.getRenewableUntilDate()
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
     ).toBeLessThan(1000)
 
     const sessionCopy = await Session.open(session.getToken())
@@ -232,8 +272,139 @@ test("Changes a session's lifespan", async () => {
       expectedExpirationDate.getTime() -
         (expirationDateCopy?.getTime() as number)
     ).toBeLessThan(1000)
+    const renewableUntilDateCopy = sessionCopy.getRenewableUntilDate()
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDateCopy?.getTime() as number)
+    ).toBeLessThan(1000)
   }
   await session.destroy()
+})
+
+test("Renews a session", async () => {
+  {
+    const session = await Session.create({ days: -1 }, { days: 2 })
+
+    try {
+      await Session.open(session.getToken())
+      expect(true).toBe(false)
+    } catch (e) {
+      expect(e).toBeInstanceOf(SessionExpiredError)
+    }
+
+    const renewedSession = await Session.renew(
+      session.getToken(),
+      { days: 5 },
+      session.getRenewalToken() as string,
+      { days: 10 }
+    )
+    const expectedExpirationDate = new Date(
+      new Date().getTime() + 5 * 24 * 60 * 60 * 1000
+    )
+    const expectedRenewableUntilDate = new Date(
+      expectedExpirationDate.getTime() + 10 * 24 * 60 * 60 * 1000
+    )
+
+    const expirationDate = renewedSession.getExpirationDate()
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
+    const renewableUntilDate = renewedSession.getRenewableUntilDate()
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
+    ).toBeLessThan(1000)
+
+    expect(renewedSession.getToken()).not.toBe(session.getToken())
+    expect(renewedSession.getRenewalToken()).not.toBe(
+      session.getRenewalToken()
+    )
+
+    await Session.open(renewedSession.getToken())
+    session.destroy()
+  }
+  {
+    const session = await Session.create({ days: -10 }, { days: 5 })
+    try {
+      await Session.renew(
+        session.getToken(),
+        { days: 10 },
+        session.getRenewalToken() as string,
+        { days: 10 }
+      )
+      expect(true).toBe(false)
+    } catch (e) {
+      expect(e).toBeInstanceOf(SessionRenewalError)
+    }
+    await session.destroy()
+  }
+  {
+    try {
+      await Session.renew("x", { days: 10 }, "y", { days: 10 })
+      expect(true).toBe(false)
+    } catch (e) {
+      expect(e).toBeInstanceOf(SessionRenewalError)
+    }
+  }
+})
+
+test("Purges dead sessions", async () => {
+  const survivor1 = await Session.create({ days: 5 }, { days: 10 })
+  const survivor2 = await Session.create({ days: -3 }, { days: 5 })
+  const purged1 = await Session.create({ days: -5 }, { days: 4 })
+  const purged2 = await Session.create({ days: -10 }, { days: 8 })
+
+  await Session.open(survivor1.getToken())
+
+  try {
+    await Session.open(survivor2.getToken())
+    expect(true).toBe(false)
+  } catch (e) {
+    expect(e).toBeInstanceOf(SessionExpiredError)
+  }
+
+  try {
+    await Session.open(purged1.getToken())
+    expect(true).toBe(false)
+  } catch (e) {
+    expect(e).toBeInstanceOf(SessionExpiredError)
+  }
+
+  try {
+    await Session.open(purged2.getToken())
+    expect(true).toBe(false)
+  } catch (e) {
+    expect(e).toBeInstanceOf(SessionExpiredError)
+  }
+
+  await Session.purge()
+
+  await Session.open(survivor1.getToken())
+
+  try {
+    await Session.open(survivor2.getToken())
+    expect(true).toBe(false)
+  } catch (e) {
+    expect(e).toBeInstanceOf(SessionExpiredError)
+  }
+
+  try {
+    await Session.open(purged1.getToken())
+    expect(true).toBe(false)
+  } catch (e) {
+    expect(e).toBeInstanceOf(SessionInvalidError)
+  }
+
+  try {
+    await Session.open(purged2.getToken())
+    expect(true).toBe(false)
+  } catch (e) {
+    expect(e).toBeInstanceOf(SessionInvalidError)
+  }
+
+  await survivor1.destroy()
+  survivor2.destroy()
 })
 
 test("Destroys a session", async () => {

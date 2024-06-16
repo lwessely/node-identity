@@ -10,6 +10,7 @@ import {
   SessionInvalidError,
   SessionProgramError,
   SessionExpiredError,
+  SessionRenewalError,
   Lifetime,
 } from "./session"
 import {
@@ -30,6 +31,7 @@ export {
   SessionInvalidError,
   SessionProgramError,
   SessionExpiredError,
+  SessionRenewalError,
   RequireGuardOptions,
   RequestWithIdentity,
   Lifetime,

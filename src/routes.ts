@@ -25,7 +25,10 @@ export interface RequireGuardOptions {
     res: Response,
     error: Error
   ) => Promise<void> | void
-  updateLifetime?: Lifetime
+  update?: {
+    lifetime: Lifetime
+    renewalPeriod: Lifetime
+  }
 }
 
 export interface RequestWithIdentity extends Request {
@@ -74,8 +77,11 @@ export function requireSession(
     try {
       const session = await getSessionFromRequest(req)
       ;(req as RequestWithIdentity).session = session
-      if (userOptions.updateLifetime) {
-        await session.updateLifetime(userOptions.updateLifetime)
+      if (userOptions.update) {
+        await session.updateLifetime(
+          userOptions.update.lifetime,
+          userOptions.update.renewalPeriod
+        )
       }
       next()
     } catch (e) {
@@ -128,8 +134,11 @@ export function requireLogin(
     let session: Session | undefined
     try {
       session = await getSessionFromRequest(req)
-      if (userOptions.updateLifetime) {
-        await session.updateLifetime(userOptions.updateLifetime)
+      if (userOptions.update) {
+        await session.updateLifetime(
+          userOptions.update.lifetime,
+          userOptions.update.renewalPeriod
+        )
       }
     } catch (e) {
       if (responseCallback) {

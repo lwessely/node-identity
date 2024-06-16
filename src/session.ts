@@ -4,6 +4,7 @@ import crypto from "crypto"
 export class SessionProgramError extends Error {}
 export class SessionInvalidError extends Error {}
 export class SessionExpiredError extends Error {}
+export class SessionRenewalError extends Error {}
 
 export interface Lifetime {
   years?: number
@@ -24,7 +25,9 @@ export class Session {
     private id: number,
     private token: string,
     private userId: number | null,
-    private expirationDate: Date | null
+    private expirationDate: Date | null,
+    private renewalToken: string | null,
+    private renewableUntil: Date | null
   ) {}
 
   private static lifetimeToMs(t: Lifetime): number {
@@ -91,6 +94,14 @@ export class Session {
       })
       await db.insert({}).into("session_schema")
     }
+
+    if (schemaVersion < 3) {
+      await db.schema.alterTable("session_tokens", (table) => {
+        table.string("renewal_token")
+        table.datetime("renewable_until")
+      })
+      await db.insert({}).into("session_schema")
+    }
   }
 
   private static ensureDatabaseConnection(): knex.Knex {
@@ -113,24 +124,117 @@ export class Session {
   }
 
   static async create(
-    lifetime: Lifetime = { days: 30 }
+    lifetime: Lifetime = { days: 30 },
+    renewalPeriod: Lifetime = { days: 90 }
   ): Promise<Session> {
     const db = this.ensureDatabaseConnection()
     const token = this.generateToken(20)
     const lifetimeMs = this.lifetimeToMs(lifetime)
     const expirationDate = new Date(new Date().getTime() + lifetimeMs)
+    const renewalToken = this.generateToken(20)
+    const renewalPeriodMs = this.lifetimeToMs(renewalPeriod)
+    const renewableUntilDate = new Date(
+      new Date().getTime() + lifetimeMs + renewalPeriodMs
+    )
     const id = await db("session_tokens").insert({
       session_token: token,
       user_id: null,
       expires: expirationDate,
+      renewal_token: renewalToken,
+      renewable_until: renewableUntilDate,
     })
-    return new Session(db, id[0], token, null, expirationDate)
+    return new Session(
+      db,
+      id[0],
+      token,
+      null,
+      expirationDate,
+      renewalToken,
+      renewableUntilDate
+    )
+  }
+
+  static async renew(
+    sessionToken: string,
+    lifetime: Lifetime,
+    renewalToken: string,
+    renewalPeriod: Lifetime
+  ): Promise<Session> {
+    const db = this.ensureDatabaseConnection()
+    const sessionResult = await db
+      .select("id", "user_id", "renewable_until")
+      .from("session_tokens")
+      .where({
+        session_token: sessionToken,
+        renewal_token: renewalToken,
+      })
+
+    if (sessionResult.length === 0) {
+      throw new SessionRenewalError(
+        "Session renewal failed: Could not find matching session and renewal token with valid renewal period."
+      )
+    }
+
+    const row = sessionResult[0]
+
+    if (row.renewable_until) {
+      const renewableUntil = new Date(row.renewable_until)
+
+      if (new Date().getTime() > renewableUntil.getTime()) {
+        throw new SessionRenewalError(
+          "Session renewal failed: Renewal period has expired."
+        )
+      }
+    }
+
+    const newToken = this.generateToken(20)
+    const newRenewalToken = this.generateToken(20)
+    const lifetimeMs = Session.lifetimeToMs(lifetime)
+    const expirationDate = new Date(new Date().getTime() + lifetimeMs)
+    const renewalPeriodMs = Session.lifetimeToMs(renewalPeriod)
+    const renewableUntilDate = new Date(
+      new Date().getTime() + lifetimeMs + renewalPeriodMs
+    )
+
+    await db("session_tokens")
+      .update({
+        session_token: newToken,
+        expires: expirationDate,
+        renewal_token: newRenewalToken,
+        renewable_until: renewableUntilDate,
+      })
+      .where({ id: row.id })
+
+    return new Session(
+      db,
+      row.id,
+      newToken,
+      row.user_id,
+      expirationDate,
+      newRenewalToken,
+      renewableUntilDate
+    )
+  }
+
+  static async purge(): Promise<void> {
+    const db = this.ensureDatabaseConnection()
+    await db
+      .del()
+      .from("session_tokens")
+      .where("renewable_until", "<", new Date())
   }
 
   static async open(token: string): Promise<Session> {
     const db = this.ensureDatabaseConnection()
     const sessionResult = await db
-      .select("id", "session_token", "user_id", "expires")
+      .select(
+        "id",
+        "session_token",
+        "user_id",
+        "expires",
+        "renewal_token",
+        "renewable_until"
+      )
       .from("session_tokens")
       .where({ session_token: token })
 
@@ -152,12 +256,18 @@ export class Session {
       )
     }
 
+    const renewableUntil = row.renewable_until
+      ? new Date(row.renewable_until)
+      : null
+
     return new Session(
       db,
       row.id,
       row.session_token,
       row.user_id,
-      expirationDate
+      expirationDate,
+      row.renewal_token,
+      renewableUntil
     )
   }
 
@@ -175,6 +285,14 @@ export class Session {
 
   getExpirationDate(): Date | null {
     return this.expirationDate
+  }
+
+  getRenewalToken(): string | null {
+    return this.renewalToken
+  }
+
+  getRenewableUntilDate(): Date | null {
+    return this.renewableUntil
   }
 
   async destroy() {
@@ -195,13 +313,19 @@ export class Session {
     this.userId = null
   }
 
-  async updateLifetime(lifetime: Lifetime) {
-    const expirationDate = new Date(
-      new Date().getTime() + Session.lifetimeToMs(lifetime)
+  async updateLifetime(lifetime: Lifetime, renewalPeriod: Lifetime) {
+    const lifetimeMs = Session.lifetimeToMs(lifetime)
+    const expirationDate = new Date(new Date().getTime() + lifetimeMs)
+    const renewableUntilDate = new Date(
+      expirationDate.getTime() + Session.lifetimeToMs(renewalPeriod)
     )
     await this.db("session_tokens")
-      .update({ expires: expirationDate })
+      .update({
+        expires: expirationDate,
+        renewable_until: renewableUntilDate,
+      })
       .where({ id: this.id })
     this.expirationDate = expirationDate
+    this.renewableUntil = renewableUntilDate
   }
 }

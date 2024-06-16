@@ -7,6 +7,26 @@
 ## Introduction
 This package helps you to quickly implement user accounts and sessions in your APIs/WebApps.
 
+## Change log
+### v0.2.0
+- Added feature: Expired sessions can now be renewed using renewal tokens
+- Introduced breaking change to signature of method ```session.updateLifetime()```
+- Introduced breaking change to interface ```RequireGuardOptions```
+
+### v0.1.4
+- Added feature: Middleware can now automatically update the lifetime of valid sessions
+- Added feature: Session lifetime can be updated
+- Cleaned up leaking sessions from tests
+
+### v0.1.3
+- Added tests for route options
+
+### v0.1.2
+- Added feature: Data in the from of key-value pairs can be added to users
+
+### v0.1.1
+- Added this README file.
+
 ## Installation
 
 ```sh
@@ -38,6 +58,19 @@ const longLivedSession = await Session.create({ months: 3, days: 15 }) // Create
 ### Open an existing session
 ```ts
 const session = await Session.open(sessionToken) // Open an existing session - This will throw if the session token is invalid, or the session has expired
+```
+
+### Renew a session
+```ts
+const renewedSession = await Session.renew(expiredSessionToken, renewalTokenForExpiredSession) // Renew a session - this will generate a new session- and renewal token
+```
+
+
+### Set a timer to purge sessions with expired renewal periods from the database once a day
+```ts
+setInterval(() => {
+  Session.purge() // Purges all sessions with expired renewal periods
+}, 24 * 60 * 60 * 1000 /* One day in milliseconds */)
 ```
 
 ### Destroy a session
@@ -161,7 +194,10 @@ export interface RequireGuardOptions {
     res: Response,
     error: Error
   ) => Promise<void> | void // A callback responsible for sending a response on error - if provided, the above options will have no effect
-  updateLifetime?: Lifetime // The new lifetime for the session if a valid token was provided - by default, lifetime remains unaffected
+  update?:{
+    lifetime: Lifetime
+    renewalPeriod: Lifetime
+  } // The new lifetime and renewal period for the session if a valid token was provided - by default, lifetime and renewal period remain unchanged
 }
 ```
 
@@ -188,6 +224,3 @@ WebSockets however may keep connections alive for long periods of time. In this 
 or ```Session``` instance for each request coming in on the WebSocket, instead of keeping them around from when the connection was first
 initiated. You can however cache the session token at the beginning of the connection, and reopen the session for each request, so the
 client does not have to re-authenticate with every single request after the initial connection.
-
-## ToDo
-- Renewal tokens should be issued, so sessions can be renewed for a period of time after expiration

@@ -185,7 +185,9 @@ beforeAll(async () => {
 
   app.use(
     "/session-required-extend-lifetime",
-    requireSession({ updateLifetime: { years: 1 } })
+    requireSession({
+      update: { lifetime: { years: 1 }, renewalPeriod: { years: 3 } },
+    })
   )
 
   app.all(
@@ -197,7 +199,9 @@ beforeAll(async () => {
 
   app.use(
     "/login-required-extend-lifetime",
-    requireLogin({ updateLifetime: { years: 1 } })
+    requireLogin({
+      update: { lifetime: { years: 1 }, renewalPeriod: { years: 3 } },
+    })
   )
 
   app.all(
@@ -629,16 +633,24 @@ test("Gets 200 from user route", async () => {
 })
 
 test("Extends valid session for session route", async () => {
-  const session = await Session.create({ hours: 1 })
+  const session = await Session.create({ hours: 1 }, { hours: 3 })
 
   {
     const expectedExpirationDate = new Date(
       new Date().getTime() + 60 * 60 * 1000
     )
+    const expectedRenewabelUntilDate = new Date(
+      expectedExpirationDate.getTime() + 3 * 60 * 60 * 1000
+    )
     const expirationDate = session.getExpirationDate()
     expect(
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
+    const renewableUntilDate = session.getRenewableUntilDate()
+    expect(
+      expectedRenewabelUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
     ).toBeLessThan(1000)
   }
   {
@@ -649,6 +661,9 @@ test("Extends valid session for session route", async () => {
     const expectedExpirationDate = new Date(
       new Date().getTime() + 365 * 24 * 60 * 60 * 1000
     )
+    const expectedRenewabelUntilDate = new Date(
+      expectedExpirationDate.getTime() + 3 * 365 * 24 * 60 * 60 * 1000
+    )
     expect(response.status).toBe(200)
     const sessionCopy = await Session.open(session.getToken())
     const expirationDate = sessionCopy.getExpirationDate()
@@ -656,22 +671,35 @@ test("Extends valid session for session route", async () => {
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
     ).toBeLessThan(5000)
+    const renewableUntilDate = sessionCopy.getRenewableUntilDate()
+    expect(
+      expectedRenewabelUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
+    ).toBeLessThan(5000)
   }
 
   await session.destroy()
 })
 
 test("Extends valid session for user route", async () => {
-  const session = await Session.create({ hours: 1 })
+  const session = await Session.create({ hours: 1 }, { hours: 3 })
 
   {
     const expectedExpirationDate = new Date(
       new Date().getTime() + 60 * 60 * 1000
     )
+    const expectedRenewabelUntilDate = new Date(
+      expectedExpirationDate.getTime() + 3 * 60 * 60 * 1000
+    )
     const expirationDate = session.getExpirationDate()
     expect(
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
+    const renewableUntilDate = session.getRenewableUntilDate()
+    expect(
+      expectedRenewabelUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
     ).toBeLessThan(1000)
   }
   {
@@ -681,6 +709,9 @@ test("Extends valid session for user route", async () => {
     )
     const expectedExpirationDate = new Date(
       new Date().getTime() + 365 * 24 * 60 * 60 * 1000
+    )
+    const expectedRenewableUntilDate = new Date(
+      expectedExpirationDate.getTime() + 3 * 365 * 24 * 60 * 60 * 1000
     )
     expect(response.status).toBe(403)
     const sessionCopy = await Session.open(session.getToken())
@@ -689,9 +720,14 @@ test("Extends valid session for user route", async () => {
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
     ).toBeLessThan(5000)
+    const renewableUntilDate = sessionCopy.getRenewableUntilDate()
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
+    ).toBeLessThan(5000)
   }
 
-  await session.updateLifetime({ hours: 1 })
+  await session.updateLifetime({ hours: 1 }, { hours: 3 })
   const user = await User.get("route-test-user")
   await user.login(session, "test-password")
 
@@ -699,10 +735,18 @@ test("Extends valid session for user route", async () => {
     const expectedExpirationDate = new Date(
       new Date().getTime() + 60 * 60 * 1000
     )
+    const expectedRenewabelUntilDate = new Date(
+      expectedExpirationDate.getTime() + 3 * 60 * 60 * 1000
+    )
     const expirationDate = session.getExpirationDate()
     expect(
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
+    const renewableUntilDate = session.getRenewableUntilDate()
+    expect(
+      expectedRenewabelUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
     ).toBeLessThan(1000)
   }
   {
@@ -713,6 +757,9 @@ test("Extends valid session for user route", async () => {
     const expectedExpirationDate = new Date(
       new Date().getTime() + 365 * 24 * 60 * 60 * 1000
     )
+    const expectedRenewableUntilDate = new Date(
+      expectedExpirationDate.getTime() + 3 * 365 * 24 * 60 * 60 * 1000
+    )
     expect(response.status).toBe(200)
     const sessionCopy = await Session.open(session.getToken())
     const expirationDate = sessionCopy.getExpirationDate()
@@ -720,9 +767,12 @@ test("Extends valid session for user route", async () => {
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
     ).toBeLessThan(5000)
+    const renewableUntilDate = sessionCopy.getRenewableUntilDate()
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
+    ).toBeLessThan(5000)
   }
 
   await session.destroy()
 })
-
-test("Extends session for user route", async () => {})
