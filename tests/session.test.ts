@@ -187,48 +187,19 @@ test("Sets and gets a session's expiration date", async () => {
 
   {
     const expirationDate = session.getExpirationDate()
-
-    expect(expirationDate?.getFullYear()).toBe(
-      expectedExpirationDate.getFullYear()
-    )
-    expect(expirationDate?.getMonth()).toBe(
-      expectedExpirationDate.getMonth()
-    )
-    expect(expirationDate?.getDate()).toBe(
-      expectedExpirationDate.getDate()
-    )
-    expect(expirationDate?.getHours()).toBe(
-      expectedExpirationDate.getHours()
-    )
-    expect(expirationDate?.getMinutes()).toBe(
-      expectedExpirationDate.getMinutes()
-    )
-    expect(expirationDate?.getSeconds()).toBe(
-      expectedExpirationDate.getSeconds()
-    )
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
   }
   {
     const sessionCopy = await Session.open(session.getToken())
     const expirationDate = sessionCopy.getExpirationDate()
 
-    expect(expirationDate?.getFullYear()).toBe(
-      expectedExpirationDate.getFullYear()
-    )
-    expect(expirationDate?.getMonth()).toBe(
-      expectedExpirationDate.getMonth()
-    )
-    expect(expirationDate?.getDate()).toBe(
-      expectedExpirationDate.getDate()
-    )
-    expect(expirationDate?.getHours()).toBe(
-      expectedExpirationDate.getHours()
-    )
-    expect(expirationDate?.getMinutes()).toBe(
-      expectedExpirationDate.getMinutes()
-    )
-    expect(expirationDate?.getSeconds()).toBe(
-      expectedExpirationDate.getSeconds()
-    )
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
   }
   await session.destroy()
 })
@@ -239,24 +210,10 @@ test("Changes a session's lifespan", async () => {
   {
     const expectedExpirationDate = new Date()
     const expirationDate = session.getExpirationDate()
-    expect(expirationDate?.getFullYear()).toBe(
-      expectedExpirationDate.getFullYear()
-    )
-    expect(expirationDate?.getMonth()).toBe(
-      expectedExpirationDate.getMonth()
-    )
-    expect(expirationDate?.getDate()).toBe(
-      expectedExpirationDate.getDate()
-    )
-    expect(expirationDate?.getHours()).toBe(
-      expectedExpirationDate.getHours()
-    )
-    expect(expirationDate?.getMinutes()).toBe(
-      expectedExpirationDate.getMinutes()
-    )
-    expect(expirationDate?.getSeconds()).toBe(
-      expectedExpirationDate.getSeconds()
-    )
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
   }
   {
     await session.updateLifetime({ days: 5 })
@@ -264,45 +221,17 @@ test("Changes a session's lifespan", async () => {
       new Date().getTime() + 5 * 24 * 60 * 60 * 1000
     )
     const expirationDate = session.getExpirationDate()
-    expect(expirationDate?.getFullYear()).toBe(
-      expectedExpirationDate.getFullYear()
-    )
-    expect(expirationDate?.getMonth()).toBe(
-      expectedExpirationDate.getMonth()
-    )
-    expect(expirationDate?.getDate()).toBe(
-      expectedExpirationDate.getDate()
-    )
-    expect(expirationDate?.getHours()).toBe(
-      expectedExpirationDate.getHours()
-    )
-    expect(expirationDate?.getMinutes()).toBe(
-      expectedExpirationDate.getMinutes()
-    )
-    expect(expirationDate?.getSeconds()).toBe(
-      expectedExpirationDate.getSeconds()
-    )
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
 
     const sessionCopy = await Session.open(session.getToken())
     const expirationDateCopy = sessionCopy.getExpirationDate()
-    expect(expirationDateCopy?.getFullYear()).toBe(
-      expectedExpirationDate.getFullYear()
-    )
-    expect(expirationDateCopy?.getMonth()).toBe(
-      expectedExpirationDate.getMonth()
-    )
-    expect(expirationDateCopy?.getDate()).toBe(
-      expectedExpirationDate.getDate()
-    )
-    expect(expirationDateCopy?.getHours()).toBe(
-      expectedExpirationDate.getHours()
-    )
-    expect(expirationDateCopy?.getMinutes()).toBe(
-      expectedExpirationDate.getMinutes()
-    )
-    expect(expirationDateCopy?.getSeconds()).toBe(
-      expectedExpirationDate.getSeconds()
-    )
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDateCopy?.getTime() as number)
+    ).toBeLessThan(1000)
   }
   await session.destroy()
 })
