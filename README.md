@@ -1,6 +1,9 @@
 # README
 > A simple library for managing users and sessions
 
+> **Note:** This package is still in alpha. API stability is not guaranteed,
+> and it would be unwise to use it in production.
+
 ## Introduction
 This package helps you to quickly implement user accounts and sessions in your APIs/WebApps.
 
@@ -143,6 +146,48 @@ app.get("/login-required", (req: Request, res: Response) => {
   const { session, user } = req as RequestWithIdentity // Get the session and user from the request
 })
 ```
+
+### Middleware options
+You can pass an object of type ```RequireGuardOptions``` as the first argument to both ```requireSession()``` and
+```requireLogin()``` to change their behavior:
+
+```ts
+export interface RequireGuardOptions {
+  responseCode?: number // The HTTP-response code to send on error
+  responseData?: { [key: string]: any } | string | Buffer // The response data to send on error
+  headers?: { [key: string]: string } // The response headers to send on error
+  responseCallback?: (
+    req: Request,
+    res: Response,
+    error: Error
+  ) => Promise<void> | void // A callback responsible for sending a response on error - if provided, the above options will have no effect
+  updateLifetime?: Lifetime // The new lifetime for the session if a valid token was provided - by default, lifetime remains unaffected
+}
+```
+
+## Notes on caching and access control security
+When you get or create a user, or open or create a session, some data is cached in the resulting object. You can assume
+that any synchronous method returning data for a session or user (e.g. user.getUsername(), session.getExpirationDate())
+may return stale information. Consider the following example:
+
+```ts
+const originalSession = await Session.create({ days: 1 })
+const sessionCopy = await Session.open(originalSession.getToken())
+await sessionCopy.updateLifetime({ days: 10 })
+
+originalSession.getExpirationDate() // Will return a (stale) expiration date one day in the future
+sessionCopy.getExpirationDate() // Will return an accurate expiration date 10 days in the future
+```
+
+For this reason, it is recommended to keep session and user objects alive for as short as possible. Short lifespans tend
+to be the natural case for REST endpoints using the middleware provided, since the middleware checks access against a fresh instance of
+a session and/or user, and adds the session and user to the ```Request``` object express passes to route handlers. Once the route handler
+returns, the objects will go out of scope, and there is no risk of accessing stale date at some much later point.
+
+WebSockets however may keep connections alive for long periods of time. In this case, it is recommended to create a new ```User```
+or ```Session``` instance for each request coming in on the WebSocket, instead of keeping them around from when the connection was first
+initiated. You can however cache the session token at the beginning of the connection, and reopen the session for each request, so the
+client does not have to re-authenticate with every single request after the initial connection.
 
 ## ToDo
 - Renewal tokens should be issued, so sessions can be renewed for a period of time after expiration

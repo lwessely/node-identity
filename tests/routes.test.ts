@@ -183,6 +183,30 @@ beforeAll(async () => {
     }
   )
 
+  app.use(
+    "/session-required-extend-lifetime",
+    requireSession({ updateLifetime: { years: 1 } })
+  )
+
+  app.all(
+    "/session-required-extend-lifetime",
+    (req: Request, res: Response) => {
+      res.send()
+    }
+  )
+
+  app.use(
+    "/login-required-extend-lifetime",
+    requireLogin({ updateLifetime: { years: 1 } })
+  )
+
+  app.all(
+    "/login-required-extend-lifetime",
+    (req: Request, res: Response) => {
+      res.send()
+    }
+  )
+
   return await new Promise<void>((resolve) => {
     server = app.listen(3000, () => {
       resolve()
@@ -603,3 +627,102 @@ test("Gets 200 from user route", async () => {
   expect(data.user.authenticated).toBe(user.isAuthenticated())
   await session.destroy()
 })
+
+test("Extends valid session for session route", async () => {
+  const session = await Session.create({ hours: 1 })
+
+  {
+    const expectedExpirationDate = new Date(
+      new Date().getTime() + 60 * 60 * 1000
+    )
+    const expirationDate = session.getExpirationDate()
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-extend-lifetime",
+      { headers: { Authorization: `Bearer ${session.getToken()}` } }
+    )
+    const expectedExpirationDate = new Date(
+      new Date().getTime() + 365 * 24 * 60 * 60 * 1000
+    )
+    expect(response.status).toBe(200)
+    const sessionCopy = await Session.open(session.getToken())
+    const expirationDate = sessionCopy.getExpirationDate()
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(5000)
+  }
+
+  await session.destroy()
+})
+
+test("Extends valid session for user route", async () => {
+  const session = await Session.create({ hours: 1 })
+
+  {
+    const expectedExpirationDate = new Date(
+      new Date().getTime() + 60 * 60 * 1000
+    )
+    const expirationDate = session.getExpirationDate()
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-extend-lifetime",
+      { headers: { Authorization: `Bearer ${session.getToken()}` } }
+    )
+    const expectedExpirationDate = new Date(
+      new Date().getTime() + 365 * 24 * 60 * 60 * 1000
+    )
+    expect(response.status).toBe(403)
+    const sessionCopy = await Session.open(session.getToken())
+    const expirationDate = sessionCopy.getExpirationDate()
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(5000)
+  }
+
+  await session.updateLifetime({ hours: 1 })
+  const user = await User.get("route-test-user")
+  await user.login(session, "test-password")
+
+  {
+    const expectedExpirationDate = new Date(
+      new Date().getTime() + 60 * 60 * 1000
+    )
+    const expirationDate = session.getExpirationDate()
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(1000)
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-extend-lifetime",
+      { headers: { Authorization: `Bearer ${session.getToken()}` } }
+    )
+    const expectedExpirationDate = new Date(
+      new Date().getTime() + 365 * 24 * 60 * 60 * 1000
+    )
+    expect(response.status).toBe(200)
+    const sessionCopy = await Session.open(session.getToken())
+    const expirationDate = sessionCopy.getExpirationDate()
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeLessThan(5000)
+  }
+
+  await session.destroy()
+})
+
+test("Extends session for user route", async () => {})

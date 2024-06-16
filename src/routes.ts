@@ -8,6 +8,7 @@ import {
   Session,
   SessionExpiredError,
   SessionInvalidError,
+  Lifetime,
 } from "./session"
 import {
   User,
@@ -24,6 +25,7 @@ export interface RequireGuardOptions {
     res: Response,
     error: Error
   ) => Promise<void> | void
+  updateLifetime?: Lifetime
 }
 
 export interface RequestWithIdentity extends Request {
@@ -72,6 +74,9 @@ export function requireSession(
     try {
       const session = await getSessionFromRequest(req)
       ;(req as RequestWithIdentity).session = session
+      if (userOptions.updateLifetime) {
+        await session.updateLifetime(userOptions.updateLifetime)
+      }
       next()
     } catch (e) {
       const { responseCallback } = userOptions
@@ -123,6 +128,9 @@ export function requireLogin(
     let session: Session | undefined
     try {
       session = await getSessionFromRequest(req)
+      if (userOptions.updateLifetime) {
+        await session.updateLifetime(userOptions.updateLifetime)
+      }
     } catch (e) {
       if (responseCallback) {
         const result = responseCallback(req, res, e as Error)
