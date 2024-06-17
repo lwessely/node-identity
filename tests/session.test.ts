@@ -6,6 +6,7 @@ import {
   SessionInvalidError,
   SessionRenewalError,
 } from "../src/session"
+import { Group } from "../src/group"
 import { User, UserAuthenticationError } from "../src/user"
 
 let sessionId = -1
@@ -23,10 +24,15 @@ beforeAll(async () => {
       database: "users_test",
     },
   })
+  User.connect(db)
+  Group.connect(db)
 })
 
 afterAll(async () => {
   await User.remove("session-test-user")
+  await Group.remove("session-test-group1")
+  await Group.remove("session-test-group2")
+  await Group.remove("session-test-group3")
   await db.destroy()
 })
 
@@ -131,11 +137,25 @@ test("Logs in a user", async () => {
 })
 
 test("Gets a user from a session", async () => {
-  const session = await Session.open(sessionToken)
-  const user = await User.fromSession(session)
-  expect(session.getUserId()).toBe(user.getId())
-  expect(user.getUsername()).toBe("session-test-user")
-  expect(user.isAuthenticated()).toBe(true)
+  const group1 = await Group.create("session-test-group1")
+  await Group.create("session-test-group2")
+  const group3 = await Group.create("session-test-group3")
+  {
+    const user = await User.get("session-test-user")
+    group1.addMember(user)
+    group3.addMember(user)
+  }
+  {
+    const session = await Session.open(sessionToken)
+    const user = await User.fromSession(session)
+    expect(session.getUserId()).toBe(user.getId())
+    expect(user.getUsername()).toBe("session-test-user")
+    expect(user.isAuthenticated()).toBe(true)
+    expect(user.listGroups()).toStrictEqual([
+      "session-test-group1",
+      "session-test-group3",
+    ])
+  }
 })
 
 test("Prevents logging out user from wrong session", async () => {

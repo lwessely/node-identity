@@ -4,6 +4,7 @@ import {
   UserAuthenticationError,
   UserInvalidError,
 } from "../src/user"
+import { Group } from "../src/group"
 import knex from "knex"
 
 let db: knex.Knex
@@ -143,6 +144,30 @@ test("Gets data associated with a user", async () => {
     dolor: false,
     amet: "bar",
   })
+})
+
+test("List names of groups the user is a member of", async () => {
+  await Group.connect(db)
+  const group1 = await Group.create("user-test-group1")
+  await Group.create("user-test-group2")
+  const group3 = await Group.create("user-test-group3")
+
+  {
+    const user = await User.get("test-user")
+    await group1.addMember(user)
+    await group3.addMember(user)
+  }
+
+  const user = await User.get("test-user")
+  const groupNames = user.listGroups()
+  expect(groupNames).toStrictEqual([
+    "user-test-group1",
+    "user-test-group3",
+  ])
+
+  await Group.remove("user-test-group1")
+  await Group.remove("user-test-group2")
+  await Group.remove("user-test-group3")
 })
 
 test("Removes a user", async () => {

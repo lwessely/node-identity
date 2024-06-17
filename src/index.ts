@@ -20,6 +20,13 @@ import {
   requireSession,
   requireLogin,
 } from "./routes"
+import {
+  Group,
+  GroupExistsError,
+  GroupHasMemberError,
+  GroupInvalidError,
+  GroupProgramError,
+} from "./group"
 
 export {
   User,
@@ -38,4 +45,9 @@ export {
   getSessionFromRequest,
   requireSession,
   requireLogin,
+  Group,
+  GroupExistsError,
+  GroupHasMemberError,
+  GroupInvalidError,
+  GroupProgramError,
 }

@@ -44,8 +44,9 @@ const db = knex(/* Your database connection parameters go here */)
 
 // This will provide the Session & User classes with your database connection,
 // and also initialize and update all necessary tables
-Session.connect(db)
 User.connect(db)
+Session.connect(db) // Make sure you always call User.connect() first, the session_tokens table references the user_accounts table
+Group.connect(db) // Make sure you always call User.connect() first, the group_member table references the user_accounts table
 ```
 
 ### Create a new session and get the session token
@@ -147,6 +148,60 @@ const user = await User.get("my-user") // Get a user
 await user.setItems({ firstName: "Jane", lastName: "Doe", age: 28 }) // set values for custom keys 'firstName', 'lastName', and 'age'
 const { firstName, age } = await user.getItems(["firstName", "age"]) // Get values for keys 'firstName' and 'age'
 await user.removeItems(["firstName", "lastName"]) // Remove items 'firstName' and 'lastName'
+```
+
+### Get names of groups the user is a member of
+```ts
+const user = await User.get("my-user") // Get an existing user
+const groupNames = user.listGroups() // Get a list of all group names the user is a member of
+```
+
+### Create a group
+```ts
+const newGroup = await Group.create("my-group") // Create a new group
+const groupName = newGroup.getName() // Get the name of the newly created group
+```
+
+### Check whether a group exists
+```ts
+await groupExists = await Group.exists("my-group") // Resolves to true if the group exists, to false otherwise
+```
+
+### Get an existing group
+```ts
+const existingGroup = await Group.get("my-group") // Get an existing group named 'my-group'
+```
+
+### Add a user to a group
+```ts
+const group = await Group.get("my-group") // Get an existing group
+const user = await User.get("my-user") // Get an existing user
+await group.addMember(user) // Add the user to the group
+```
+
+### Get usernames of group members
+```ts
+const group = await Group.get("my-group") // Get an existing group
+const usernames = await group.listMembers() // Gets a list of all usernames of users that are a member of the group
+```
+
+### Check if user is a member of a group
+```ts
+const group = await Group.get("my-group") // Get an existing group
+const user = await User.get("my-user") // Get an existing user
+const isMember = await group.hasMember(user) // Resolves to true if the user is a member of the group, to false otherwise
+```
+
+### Remove a user from a group
+```ts
+const group = await Group.get("my-group") // Get an existing group
+const user = await User.get("my-user") // Get an existing user
+await group.removeMember(user) // Removes the user from the group
+```
+
+### Remove a group
+```ts
+await Group.remove("my-group") // Remove a group
 ```
 
 ## Express middleware

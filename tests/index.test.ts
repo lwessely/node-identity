@@ -14,6 +14,13 @@ import {
   SessionExpiredError,
   SessionRenewalError,
 } from "../src/session"
+import {
+  Group,
+  GroupExistsError,
+  GroupHasMemberError,
+  GroupInvalidError,
+  GroupProgramError,
+} from "../src/group"
 import * as routes from "../src/routes"
 
 test("Exports members correctly", () => {
@@ -34,4 +41,9 @@ test("Exports members correctly", () => {
   )
   expect(identity.requireSession).toBe(routes.requireSession)
   expect(identity.requireLogin).toBe(routes.requireLogin)
+  expect(identity.Group).toBe(Group)
+  expect(identity.GroupExistsError).toBe(GroupExistsError)
+  expect(identity.GroupHasMemberError).toBe(GroupHasMemberError)
+  expect(identity.GroupInvalidError).toBe(GroupInvalidError)
+  expect(identity.GroupProgramError).toBe(GroupProgramError)
 })

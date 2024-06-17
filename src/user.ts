@@ -14,7 +14,8 @@ export class User {
     private db: knex.Knex,
     private id: number,
     private username: string,
-    private authenticated: boolean = false
+    private authenticated: boolean = false,
+    private groups: string[]
   ) {}
 
   private static async ensureDatabaseSchema(): Promise<void> {
@@ -118,7 +119,18 @@ export class User {
     }
 
     const { id } = userResult[0]
-    return new User(db, id as number, username, false)
+    const groupResult = await db
+      .select("group_names.name")
+      .from("group_members")
+      .leftJoin(
+        "group_names",
+        "group_members.group_id",
+        "group_names.id"
+      )
+      .where({ user_id: id as number })
+    const groups = groupResult.map((row) => row.name)
+
+    return new User(db, id as number, username, false, groups)
   }
 
   static async fromSession(session: Session) {
@@ -143,8 +155,19 @@ export class User {
       )
     }
 
+    const groupResult = await db
+      .select("group_names.name")
+      .from("group_members")
+      .leftJoin(
+        "group_names",
+        "group_members.group_id",
+        "group_names.id"
+      )
+      .where({ user_id: userId })
+    const groups = groupResult.map((row) => row.name)
+
     const { username } = userResult[0]
-    return new User(db, userId, username, true)
+    return new User(db, userId, username, true, groups)
   }
 
   static async remove(username: string): Promise<void> {
@@ -171,6 +194,10 @@ export class User {
 
   getUsername(): string {
     return this.username
+  }
+
+  listGroups(): string[] {
+    return this.groups
   }
 
   async verifyPassword(password: string): Promise<boolean> {
