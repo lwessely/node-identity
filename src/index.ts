@@ -21,6 +21,9 @@ import {
   requireSession,
   requireLogin,
   AccessCheckCallback,
+  requireAnyGroup,
+  requireAllGroups,
+  requireCondition,
 } from "./routes"
 import {
   Group,
@@ -49,6 +52,9 @@ export {
   getUserFromRequest,
   requireSession,
   requireLogin,
+  requireAnyGroup,
+  requireAllGroups,
+  requireCondition,
   Group,
   GroupExistsError,
   GroupHasMemberError,

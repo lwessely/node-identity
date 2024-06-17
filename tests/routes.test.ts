@@ -13,11 +13,15 @@ import {
   requireSession,
   requireLogin,
   RequestWithIdentity,
+  requireAnyGroup,
+  requireCondition,
+  requireAllGroups,
 } from "../src/routes"
+import { Group } from "../src/group"
 import express, { NextFunction, Request, Response } from "express"
 import { Server } from "http"
 import knex from "knex"
-import { error } from "console"
+import bodyParser from "body-parser"
 
 let app: express.Express
 let server: Server
@@ -35,12 +39,15 @@ beforeAll(async () => {
     },
   })
 
-  await Session.connect(db)
   await User.connect(db)
+  await Session.connect(db)
+  await Group.connect(db)
   const user = await User.create("route-test-user")
   await user.setPassword("test-password")
 
   app = express()
+
+  app.use(bodyParser.json())
 
   app.use("/session-required", requireSession())
 
@@ -282,6 +289,90 @@ beforeAll(async () => {
         })
       },
     })
+  )
+
+  app.use(
+    "/require-any-group",
+    requireAnyGroup(["required-1", "required-2"], {
+      responseCallback: (
+        req: Request,
+        res: Response,
+        error: Error
+      ) => {
+        const data = req.body
+        if (data?.throw) {
+          throw new Error(
+            "This is an intentional error from the callback, to test error handling."
+          )
+        }
+        res.status(418)
+        res.json({})
+      },
+    })
+  )
+
+  app.all(
+    "/require-any-group",
+    (req: RequestWithIdentity, res: Response) => {
+      const { session, user } = req
+      res.status(200)
+      res.json({ session, user })
+    }
+  )
+
+  app.use(
+    "/require-all-groups",
+    requireAllGroups(["required-1", "required-2"], {
+      responseCallback: (
+        req: Request,
+        res: Response,
+        error: Error
+      ) => {
+        const data = req.body
+        if (data?.throw) {
+          throw new Error(
+            "This is an intentional error from the callback, to test error handling."
+          )
+        }
+        res.status(418)
+        res.json({})
+      },
+    })
+  )
+
+  app.all(
+    "/require-all-groups",
+    (req: RequestWithIdentity, res: Response) => {
+      const { session, user } = req
+      res.status(200)
+      res.json({ session, user })
+    }
+  )
+
+  app.use(
+    "/require-condition",
+    requireCondition((req: Request, res: Response) => {
+      const data = req.body
+
+      if (data?.throw) {
+        throw new Error(
+          "This is an intentional error from the callback, to test error handling."
+        )
+      }
+
+      if (data.authorize !== true) {
+        throw new UserAuthenticationError("Custom condition not met!")
+      }
+    })
+  )
+
+  app.all(
+    "/require-condition",
+    (req: RequestWithIdentity, res: Response) => {
+      const { session, user } = req
+      res.status(200)
+      res.json({ session, user })
+    }
   )
 
   app.use(
@@ -857,6 +948,213 @@ test("Extends valid session for user route", async () => {
   await session.destroy()
 })
 
+test("Gets 418 from route requiring any group", async () => {
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-any-group"
+    )
+    expect(response.status).toBe(418)
+  }
+  {
+    const user = await User.get("route-test-user")
+    await user.setPassword("123")
+    const group1 = await Group.create("not-required-1")
+    const group2 = await Group.create("not-required-2")
+
+    await group1.addMember(user)
+    await group2.addMember(user)
+
+    const session = await Session.create()
+    await user.login(session, "123")
+
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-any-group",
+      { headers: { Authorization: `Bearer ${session.getToken()}` } }
+    )
+    expect(response.status).toBe(418)
+
+    await Group.remove("not-required-1")
+    await Group.remove("not-required-2")
+    await session.destroy()
+  }
+})
+
+test("Gets 200 from route requiring any group", async () => {
+  const user = await User.get("route-test-user")
+  await user.setPassword("123")
+  const group1 = await Group.create("required-2")
+  const group2 = await Group.create("not-required-1")
+
+  await group1.addMember(user)
+  await group2.addMember(user)
+
+  const session = await Session.create()
+  await user.login(session, "123")
+
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-any-group",
+      { headers: { Authorization: `Bearer ${session.getToken()}` } }
+    )
+    expect(response.status).toBe(200)
+
+    const data = await response.json()
+    expect(data.session.id).toBe(session.getId())
+    expect(data.user.id).toBe(user.getId())
+  }
+
+  const group3 = await Group.create("required-1")
+  group3.addMember(user)
+
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-any-group",
+      { headers: { Authorization: `Bearer ${session.getToken()}` } }
+    )
+    expect(response.status).toBe(200)
+
+    const data = await response.json()
+    expect(data.session.id).toBe(session.getId())
+    expect(data.user.id).toBe(user.getId())
+  }
+
+  await Group.remove("required-1")
+  await Group.remove("required-2")
+  await Group.remove("not-required-1")
+  await session.destroy()
+})
+
+test("Gets 418 from route requiring all groups", async () => {
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-all-groups"
+    )
+    expect(response.status).toBe(418)
+  }
+  {
+    const user = await User.get("route-test-user")
+    await user.setPassword("123")
+    const group1 = await Group.create("required-1")
+    const group2 = await Group.create("not-required-2")
+
+    await group1.addMember(user)
+    await group2.addMember(user)
+
+    const session = await Session.create()
+    await user.login(session, "123")
+
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-all-groups",
+      { headers: { Authorization: `Bearer ${session.getToken()}` } }
+    )
+    expect(response.status).toBe(418)
+
+    await Group.remove("required-1")
+    await Group.remove("not-required-2")
+    await session.destroy()
+  }
+})
+
+test("Gets 200 from route requiring all groups", async () => {
+  {
+    const user = await User.get("route-test-user")
+    await user.setPassword("123")
+    const group1 = await Group.create("required-1")
+    const group2 = await Group.create("not-required-2")
+    const group3 = await Group.create("required-2")
+
+    await group1.addMember(user)
+    await group2.addMember(user)
+    await group3.addMember(user)
+
+    const session = await Session.create()
+    await user.login(session, "123")
+
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-all-groups",
+      { headers: { Authorization: `Bearer ${session.getToken()}` } }
+    )
+    expect(response.status).toBe(200)
+
+    const data = await response.json()
+    expect(data.session.id).toBe(session.getId())
+    expect(data.user.id).toBe(user.getId())
+
+    await Group.remove("required-1")
+    await Group.remove("not-required-2")
+    await Group.remove("required-2")
+    await session.destroy()
+  }
+})
+
+test("Gets 403 from route requiring condition", async () => {
+  {
+    const user = await User.get("route-test-user")
+    await user.setPassword("123")
+    const group1 = await Group.create("required-1")
+    const group2 = await Group.create("not-required-2")
+
+    await group1.addMember(user)
+    await group2.addMember(user)
+
+    const session = await Session.create()
+    await user.login(session, "123")
+
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-condition",
+      {
+        method: "POST",
+        body: JSON.stringify({ authorize: false }),
+        headers: {
+          Authorization: `Bearer ${session.getToken()}`,
+          "Content-type": "application/json",
+        },
+      }
+    )
+    expect(response.status).toBe(403)
+
+    await Group.remove("required-1")
+    await Group.remove("not-required-2")
+    await session.destroy()
+  }
+})
+
+test("Gets 200 from route requiring condition", async () => {
+  {
+    const user = await User.get("route-test-user")
+    await user.setPassword("123")
+    const group1 = await Group.create("required-1")
+    const group2 = await Group.create("not-required-2")
+
+    await group1.addMember(user)
+    await group2.addMember(user)
+
+    const session = await Session.create()
+    await user.login(session, "123")
+
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-condition",
+      {
+        method: "POST",
+        body: JSON.stringify({ authorize: true }),
+        headers: {
+          Authorization: `Bearer ${session.getToken()}`,
+          "Content-type": "application/json",
+        },
+      }
+    )
+    expect(response.status).toBe(200)
+
+    const data = await response.json()
+    expect(data.session.id).toBe(session.getId())
+    expect(data.user.id).toBe(user.getId())
+
+    await Group.remove("required-1")
+    await Group.remove("not-required-2")
+    await session.destroy()
+  }
+})
+
 test("Handles throws in route callback correctly", async () => {
   {
     const response = await fetch(
@@ -891,6 +1189,57 @@ test("Handles throws in route callback correctly", async () => {
   {
     const response = await fetch(
       "http://127.0.0.1:3000/login-required-throw-async"
+    )
+    const data = await response.json()
+    expect(response.status).toBe(500)
+    expect(data.error).toBe(
+      "This is an intentional error from the callback, to test error handling."
+    )
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-any-group",
+      {
+        method: "POST",
+        headers: {
+          "Content-type": "application/json",
+        },
+        body: JSON.stringify({ throw: true }),
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(500)
+    expect(data.error).toBe(
+      "This is an intentional error from the callback, to test error handling."
+    )
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-all-groups",
+      {
+        method: "POST",
+        headers: {
+          "Content-type": "application/json",
+        },
+        body: JSON.stringify({ throw: true }),
+      }
+    )
+    const data = await response.json()
+    expect(response.status).toBe(500)
+    expect(data.error).toBe(
+      "This is an intentional error from the callback, to test error handling."
+    )
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-condition",
+      {
+        method: "POST",
+        headers: {
+          "Content-type": "application/json",
+        },
+        body: JSON.stringify({ throw: true }),
+      }
     )
     const data = await response.json()
     expect(response.status).toBe(500)

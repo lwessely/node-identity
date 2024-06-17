@@ -1,13 +1,22 @@
 # README
-> A simple library for managing users and sessions
+> A simple library for managing users, user groups, and sessions
 
 > **Note:** This package is still in alpha. API stability is not guaranteed,
 > and it would be unwise to use it in production.
 
 ## Introduction
-This package helps you to quickly implement user accounts and sessions in your APIs/WebApps.
+This package helps you to quickly add user accounts, user groups, and sessions in your APIs/WebApps.
 
 ## Change log
+### v0.2.2
+- Added middleware: `requireAnyGroup()`
+- Added middleware: `requireAllGroups()`
+- Added middleware: `requireCondition()`
+- Fixed issue: Exceptions in the middleware are now passed on to express error handlers, instead of causing a crash
+
+### v0.2.1
+- Added feature: User groups
+
 ### v0.2.0
 - Added feature: Expired sessions can now be renewed using renewal tokens
 - Introduced breaking change to signature of method ```session.updateLifetime()```
@@ -235,9 +244,66 @@ app.get("/login-required", (req: Request, res: Response) => {
 })
 ```
 
+### Make it a requirement for the user to be in at least one group in a list
+```ts
+import express, { Request, Response } from "express"
+import { requireAnyGroup, RequestWithIdentity } from "@lwtw/identity"
+
+app = express()
+app.use(
+    "/require-any-group",
+    requireAnyGroup(["this-group", "or-that-group", "or-even-this-group"])
+  ) // Responds with an error if the request comes from a user who is not in at least one of these groups
+
+app.get("/require-any-group", (req: Request, res: Response) => {
+  const { session, user } = req as RequestWithIdentity // Get the session and user from the request
+})
+```
+
+### Make it a requirement for the user to be in all groups in a list
+```ts
+import express, { Request, Response } from "express"
+import { requireAllGroups, RequestWithIdentity } from "@lwtw/identity"
+
+app = express()
+app.use(
+    "/require-all-groups",
+    requireAllGroups(["this-group", "and-this-group", "this-group-as-well"])
+  ) // Responds with an error if the request comes from a user who is not in all of these groups
+
+app.get("/require-all-groups", (req: Request, res: Response) => {
+  const { session, user } = req as RequestWithIdentity // Get the session and user from the request
+})
+```
+
+### Make a custom requirement
+```ts
+import express, { Request, Response } from "express"
+import { requireCondition, RequestWithIdentity, UserInvalidError } from "@lwtw/identity"
+
+app = express()
+app.use(
+    "/require-condition",
+    requireCondition((req: Request, res: Response) => {
+      const { session, user } = req as RequestWithIdentity // Get the session and user from the request, if they are available
+      const username = user instanceof User ? user.getUsername() : ""
+      const sessionId = session instanceof Session ? session.getId() : ""
+
+      if (username !== "admin") {
+        console.warn(`User '${username}' tried to access the admin area (sessionId: ${sessionId})!`)
+        throw new UserInvalidError("Only the administrator is allowed here!") // Prevents access
+      }
+    })
+  ) // Responds with an error if the callback throws or rejects with a Group*, User* or Session* error - all other errors are forwarded to express
+    // You can handle other kinds of errors as well by providing a responseCallback (see 'Middleware options' below)
+
+app.get("/require-condition", (req: Request, res: Response) => {
+  const { session, user } = req as RequestWithIdentity // Get the session and user from the request
+})
+```
+
 ### Middleware options
-You can pass an object of type ```RequireGuardOptions``` as the first argument to both ```requireSession()``` and
-```requireLogin()``` to change their behavior:
+You can pass an object of type ```RequireGuardOptions``` as the last argument to any `require*` middleware function to change its behavior.
 
 ```ts
 export interface RequireGuardOptions {
@@ -259,7 +325,7 @@ export interface RequireGuardOptions {
 ## Notes on caching and access control security
 When you get or create a user, or open or create a session, some data is cached in the resulting object. You can assume
 that any synchronous method returning data for a session or user (e.g. ```user.getUsername()```, ```session.getExpirationDate()```)
-may return stale information. Consider the following example:
+may return stale information. Consider the following two examples:
 
 ```ts
 const originalSession = await Session.create({ days: 1 })
@@ -268,6 +334,15 @@ await sessionCopy.updateLifetime({ days: 10 })
 
 originalSession.getExpirationDate() // Will return a (stale) expiration date one day in the future
 sessionCopy.getExpirationDate() // Will return an accurate expiration date 10 days in the future
+```
+
+```ts
+const user = await User.create("my-user") // Create a new user
+const group = await Group.create("my-group") // Create a new, empty group
+await group.addMember(user) // Add user to group
+
+const groupList = user.listGroups() // will be a stale (and thus empty) array
+const memberList = await Group.listMembers() // will correctly contain "my-user"
 ```
 
 For this reason, it is recommended to keep session and user objects alive for as short as possible. Short lifespans tend
@@ -279,3 +354,19 @@ WebSockets however may keep connections alive for long periods of time. In this 
 or ```Session``` instance for each request coming in on the WebSocket, instead of keeping them around from when the connection was first
 initiated. You can however cache the session token at the beginning of the connection, and reopen the session for each request, so the
 client does not have to re-authenticate with every single request after the initial connection.
+
+If you need to make sure your data is as recent as possible, you can simply re-get a user or group, or re-open a session:
+
+```ts
+let user = await User.create("my-user") // Create a new user
+const group = await Group.create("my-group") // Create a new, empty group
+await group.addMember(user) // Add user to group
+
+user = await User.get(user.getUsername()) // Get a fresh instance of the user
+
+const groupList = user.listGroups() // will correctly contain 'my-group'
+const memberList = await Group.listMembers() // will still correctly contain 'my-user'
+```
+
+# ToDo
+- Write tests for when `requireSession()`, `requireLogin()`, `requireAnyGroups()`, and `requireAllGroups()` are chained

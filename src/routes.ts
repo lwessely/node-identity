@@ -374,36 +374,40 @@ export function requireCondition(
     res: Response,
     next: NextFunction
   ): Promise<void> => {
-    const session = await getSessionFromRequest(req).catch((e) => e)
-
-    if (session instanceof Session) {
-      ;(req as RequestWithIdentity).session = session
-      if (userOptions.update) {
-        await session.updateLifetime(
-          userOptions.update.lifetime,
-          userOptions.update.renewalPeriod
-        )
-      }
-    }
-
-    const user = await getUserFromRequest(req, session).catch(
-      (e) => e
-    )
-
-    if (user instanceof User) {
-      ;(req as RequestWithIdentity).user = user
-    }
-
     try {
-      let authorizationResult = accessCheckCallback(req, res)
-      if (authorizationResult instanceof Promise) {
-        authorizationResult = await authorizationResult
-      }
-    } catch (e) {
-      await sendErrorResponse(req, res, e as Error, userOptions)
-      return
-    }
+      const session = await getSessionFromRequest(req).catch((e) => e)
 
-    next()
+      if (session instanceof Session) {
+        ;(req as RequestWithIdentity).session = session
+        if (userOptions.update) {
+          await session.updateLifetime(
+            userOptions.update.lifetime,
+            userOptions.update.renewalPeriod
+          )
+        }
+      }
+
+      const user = await getUserFromRequest(req, session).catch(
+        (e) => e
+      )
+
+      if (user instanceof User) {
+        ;(req as RequestWithIdentity).user = user
+      }
+
+      try {
+        let authorizationResult = accessCheckCallback(req, res)
+        if (authorizationResult instanceof Promise) {
+          authorizationResult = await authorizationResult
+        }
+      } catch (e) {
+        await sendErrorResponse(req, res, e as Error, userOptions)
+        return
+      }
+
+      next()
+    } catch (e) {
+      next(e)
+    }
   }
 }
