@@ -1,13 +1,20 @@
 {
   "name": "@lwtw/identity",
-  "version": "0.2.1",
-  "description": "",
+  "version": "0.2.2",
+  "description": "A simple library for managing users, user groups, and sessions",
+  "keywords": [
+    "sessions",
+    "users",
+    "groups",
+    "express",
+    "middleware"
+  ],
   "main": "./dist/index.js",
   "scripts": {
     "test": "jest"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Laurenz Wessely",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@jest/globals": "^29.7.0",
     "@types/bcrypt": "^5.0.2",
