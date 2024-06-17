@@ -372,4 +372,5 @@ const memberList = await Group.listMembers() // will still correctly contain 'my
 ```
 
 # ToDo
-- Write tests for when `requireSession()`, `requireLogin()`, `requireAnyGroups()`, and `requireAllGroups()` are chained
+- Write tests to check if `requireAnyGroups()`, `requireAllGroups()`, and `requireCondition()` correctly update session lifetime
+- Write tests for when `requireSession()`, `requireLogin()`, `requireAnyGroups()`, `requireAllGroups()`, and `requireCondition()` are chained
