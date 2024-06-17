@@ -427,6 +427,40 @@ beforeAll(async () => {
     }
   )
 
+  app.use("/require-all", requireSession())
+  app.use("/require-all", requireLogin())
+  app.use("/require-all", requireAnyGroup(["required-group-1"]))
+  app.use("/require-all", requireAllGroups(["required-group-1"]))
+  app.use(
+    "/require-all",
+    requireCondition(() => {})
+  )
+
+  app.all("/require-all", (req: Request, res: Response) => {
+    const { user, session } = req as RequestWithIdentity
+    res.json({ session, user })
+  })
+
+  app.use(
+    "/require-all-reverse",
+    requireCondition(() => {})
+  )
+  app.use(
+    "/require-all-reverse",
+    requireAllGroups(["required-group-1"])
+  )
+  app.use(
+    "/require-all-reverse",
+    requireAnyGroup(["required-group-1"])
+  )
+  app.use("/require-all-reverse", requireLogin())
+  app.use("/require-all-reverse", requireSession())
+
+  app.all("/require-all-reverse", (req: Request, res: Response) => {
+    const { user, session } = req as RequestWithIdentity
+    res.json({ session, user })
+  })
+
   app.use(
     (err: Error, req: Request, res: Response, next: NextFunction) => {
       res.status(500)
@@ -1507,6 +1541,42 @@ test("Route requiring condition correctly extends session", async () => {
       newRenewableUntilDate.getTime()
   ).toBeGreaterThanOrEqual(0)
 
+  await session.destroy()
+})
+
+test("Nested middleware does not cause issues", async () => {
+  const user = await User.create("nested-routes-test-user")
+  await user.setPassword("123")
+  const session = await Session.create()
+  await user.login(session, "123")
+  const group = await Group.create("required-group-1")
+  await group.addMember(user)
+
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-all",
+      { headers: { Authorization: `Bearer ${session.getToken()}` } }
+    )
+    expect(response.status).toBe(200)
+
+    const data = await response.json()
+    expect(data.user.id).toBe(user.getId())
+    expect(data.session.id).toBe(session.getId())
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/require-all-reverse",
+      { headers: { Authorization: `Bearer ${session.getToken()}` } }
+    )
+    expect(response.status).toBe(200)
+
+    const data = await response.json()
+    expect(data.user.id).toBe(user.getId())
+    expect(data.session.id).toBe(session.getId())
+  }
+
+  await User.remove("nested-routes-test-user")
+  await Group.remove("required-group-1")
   await session.destroy()
 })
 

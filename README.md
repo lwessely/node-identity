@@ -370,6 +370,3 @@ user = await User.get(user.getUsername()) // Get a fresh instance of the user
 const groupList = user.listGroups() // will correctly contain 'my-group'
 const memberList = await Group.listMembers() // will still correctly contain 'my-user'
 ```
-
-# ToDo
-- Write tests for when `requireSession()`, `requireLogin()`, `requireAnyGroups()`, `requireAllGroups()`, and `requireCondition()` are chained
