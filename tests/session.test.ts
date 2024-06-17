@@ -222,11 +222,19 @@ test("Sets and gets a session's expiration and renewal date", async () => {
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
     const renewableUntilDate = session.getRenewableUntilDate()
     expect(
       expectedRenewableUntilDate.getTime() -
         (renewableUntilDate?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
   }
   {
     const sessionCopy = await Session.open(session.getToken())
@@ -236,12 +244,20 @@ test("Sets and gets a session's expiration and renewal date", async () => {
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
 
     const renewableUntilDate = sessionCopy.getRenewableUntilDate()
     expect(
       expectedRenewableUntilDate.getTime() -
         (renewableUntilDate?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
   }
   await session.destroy()
 })
@@ -261,11 +277,19 @@ test("Changes a session's lifespan and renewal period", async () => {
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
     const renewableUntilDate = session.getRenewableUntilDate()
     expect(
       expectedRenewableUntilDate.getTime() -
         (renewableUntilDate?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
   }
   {
     await session.updateLifetime({ days: 5 }, { days: 15 })
@@ -280,11 +304,19 @@ test("Changes a session's lifespan and renewal period", async () => {
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
     const renewableUntilDate = session.getRenewableUntilDate()
     expect(
       expectedRenewableUntilDate.getTime() -
         (renewableUntilDate?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
 
     const sessionCopy = await Session.open(session.getToken())
     const expirationDateCopy = sessionCopy.getExpirationDate()
@@ -292,11 +324,19 @@ test("Changes a session's lifespan and renewal period", async () => {
       expectedExpirationDate.getTime() -
         (expirationDateCopy?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDateCopy?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
     const renewableUntilDateCopy = sessionCopy.getRenewableUntilDate()
     expect(
       expectedRenewableUntilDate.getTime() -
         (renewableUntilDateCopy?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDateCopy?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
   }
   await session.destroy()
 })
@@ -330,11 +370,19 @@ test("Renews a session", async () => {
       expectedExpirationDate.getTime() -
         (expirationDate?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedExpirationDate.getTime() -
+        (expirationDate?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
     const renewableUntilDate = renewedSession.getRenewableUntilDate()
     expect(
       expectedRenewableUntilDate.getTime() -
         (renewableUntilDate?.getTime() as number)
     ).toBeLessThan(1000)
+    expect(
+      expectedRenewableUntilDate.getTime() -
+        (renewableUntilDate?.getTime() as number)
+    ).toBeGreaterThanOrEqual(0)
 
     expect(renewedSession.getToken()).not.toBe(session.getToken())
     expect(renewedSession.getRenewalToken()).not.toBe(
