@@ -14,9 +14,10 @@ import {
   requireLogin,
   RequestWithIdentity,
 } from "../src/routes"
-import express, { Request, Response } from "express"
+import express, { NextFunction, Request, Response } from "express"
 import { Server } from "http"
 import knex from "knex"
+import { error } from "console"
 
 let app: express.Express
 let server: Server
@@ -208,6 +209,85 @@ beforeAll(async () => {
     "/login-required-extend-lifetime",
     (req: Request, res: Response) => {
       res.send()
+    }
+  )
+
+  app.use(
+    "/session-required-throw",
+    requireSession({
+      responseCallback: (
+        req: Request,
+        res: Response,
+        error: Error
+      ) => {
+        throw new Error(
+          "This is an intentional error from the callback, to test error handling."
+        )
+      },
+    })
+  )
+
+  app.use(
+    "/session-required-throw-async",
+    requireSession({
+      responseCallback: async (
+        req: Request,
+        res: Response,
+        error: Error
+      ) => {
+        await new Promise((resolve, reject) => {
+          setTimeout(() => {
+            reject(
+              new Error(
+                "This is an intentional error from the callback, to test error handling."
+              )
+            )
+          }, 1)
+        })
+      },
+    })
+  )
+
+  app.use(
+    "/login-required-throw",
+    requireLogin({
+      responseCallback: (
+        req: Request,
+        res: Response,
+        error: Error
+      ) => {
+        throw new Error(
+          "This is an intentional error from the callback, to test error handling."
+        )
+      },
+    })
+  )
+
+  app.use(
+    "/login-required-throw-async",
+    requireLogin({
+      responseCallback: async (
+        req: Request,
+        res: Response,
+        error: Error
+      ) => {
+        await new Promise((resolve, reject) => {
+          setTimeout(() => {
+            reject(
+              new Error(
+                "This is an intentional error from the callback, to test error handling."
+              )
+            )
+          }, 1)
+        })
+      },
+    })
+  )
+
+  app.use(
+    (err: Error, req: Request, res: Response, next: NextFunction) => {
+      res.status(500)
+      res.json({ error: err.message })
     }
   )
 
@@ -775,4 +855,47 @@ test("Extends valid session for user route", async () => {
   }
 
   await session.destroy()
+})
+
+test("Handles throws in route callback correctly", async () => {
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-throw"
+    )
+    const data = await response.json()
+    expect(response.status).toBe(500)
+    expect(data.error).toBe(
+      "This is an intentional error from the callback, to test error handling."
+    )
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/session-required-throw-async"
+    )
+    const data = await response.json()
+    expect(response.status).toBe(500)
+    expect(data.error).toBe(
+      "This is an intentional error from the callback, to test error handling."
+    )
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-throw"
+    )
+    const data = await response.json()
+    expect(response.status).toBe(500)
+    expect(data.error).toBe(
+      "This is an intentional error from the callback, to test error handling."
+    )
+  }
+  {
+    const response = await fetch(
+      "http://127.0.0.1:3000/login-required-throw-async"
+    )
+    const data = await response.json()
+    expect(response.status).toBe(500)
+    expect(data.error).toBe(
+      "This is an intentional error from the callback, to test error handling."
+    )
+  }
 })
