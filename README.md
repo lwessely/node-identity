@@ -8,6 +8,9 @@
 This package helps you to quickly add user accounts, user groups, and sessions in your APIs/WebApps.
 
 ## Change log
+### v0.3.0
+- Fixed inconsistency: `group.removeMember()` now throws a `GroupNotAMemberError` instead of `GroupHasMemberError`
+
 ### v0.2.2
 - Added middleware: `requireAnyGroup()`
 - Added middleware: `requireAllGroups()`

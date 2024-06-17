@@ -5,6 +5,7 @@ import {
   Group,
   GroupExistsError,
   GroupInvalidError,
+  GroupNotAMemberError,
 } from "../src/group"
 
 let db: knex.Knex
@@ -108,6 +109,13 @@ test("Removes members from a group", async () => {
   const user1 = await User.get("group-test-user-1")
   const group = await Group.get("test-group")
   await group.removeMember(user1)
+
+  try {
+    await group.removeMember(user1)
+    expect(true).toBe(false)
+  } catch (e) {
+    expect(e).toBeInstanceOf(GroupNotAMemberError)
+  }
 })
 
 test("Lists group members", async () => {

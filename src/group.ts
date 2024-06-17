@@ -168,7 +168,7 @@ export class Group {
 
   async removeMember(user: User): Promise<void> {
     if (!(await this.hasMember(user))) {
-      throw new GroupHasMemberError(
+      throw new GroupNotAMemberError(
         `Failed to remove user '${user.getUsername()}' from group: User not in group.`
       )
     }
