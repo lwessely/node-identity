@@ -218,7 +218,7 @@ sessionCopy.getExpirationDate() // Will return an accurate expiration date 10 da
 For this reason, it is recommended to keep session and user objects alive for as short as possible. Short lifespans tend
 to be the natural case for REST endpoints using the middleware provided, since the middleware checks access against a fresh instance of
 a session and/or user, and adds the session and user to the ```Request``` object express passes to route handlers. Once the route handler
-returns, the objects will go out of scope, and there is no risk of accessing stale date at some much later point.
+returns, the objects will go out of scope, and there is no risk of accessing stale data at some much later point.
 
 WebSockets however may keep connections alive for long periods of time. In this case, it is recommended to create a new ```User```
 or ```Session``` instance for each request coming in on the WebSocket, instead of keeping them around from when the connection was first
