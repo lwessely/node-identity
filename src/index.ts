@@ -17,8 +17,10 @@ import {
   RequireGuardOptions,
   RequestWithIdentity,
   getSessionFromRequest,
+  getUserFromRequest,
   requireSession,
   requireLogin,
+  AccessCheckCallback,
 } from "./routes"
 import {
   Group,
@@ -26,6 +28,7 @@ import {
   GroupHasMemberError,
   GroupInvalidError,
   GroupProgramError,
+  GroupNotAMemberError,
 } from "./group"
 
 export {
@@ -43,6 +46,7 @@ export {
   RequestWithIdentity,
   Lifetime,
   getSessionFromRequest,
+  getUserFromRequest,
   requireSession,
   requireLogin,
   Group,
@@ -50,4 +54,6 @@ export {
   GroupHasMemberError,
   GroupInvalidError,
   GroupProgramError,
+  GroupNotAMemberError,
+  AccessCheckCallback,
 }

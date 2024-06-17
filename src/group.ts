@@ -5,6 +5,7 @@ export class GroupExistsError extends Error {}
 export class GroupInvalidError extends Error {}
 export class GroupProgramError extends Error {}
 export class GroupHasMemberError extends Error {}
+export class GroupNotAMemberError extends Error {}
 
 export class Group {
   static db: knex.Knex | null = null

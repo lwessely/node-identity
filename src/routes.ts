@@ -15,6 +15,7 @@ import {
   UserAuthenticationError,
   UserInvalidError,
 } from "./user"
+import { GroupNotAMemberError } from "./group"
 
 export interface RequireGuardOptions {
   responseCode?: number
@@ -36,9 +37,19 @@ export interface RequestWithIdentity extends Request {
   session?: Session
 }
 
+export type AccessCheckCallback = (
+  req: Request,
+  res: Response
+) => Promise<void> | void
+
 export async function getSessionFromRequest(
   req: Request
 ): Promise<Session> {
+  const openSession = (req as RequestWithIdentity).session
+  if (openSession instanceof Session) {
+    return openSession
+  }
+
   const authorization = req.get("Authorization") ?? ""
   const [authType, authToken] = authorization?.split(" ")
 
@@ -55,59 +66,92 @@ export async function getSessionFromRequest(
   return await Session.open(authToken)
 }
 
+export async function getUserFromRequest(
+  req: Request,
+  cachedSession?: Session
+): Promise<User> {
+  const activeUser = (req as RequestWithIdentity).user
+  if (activeUser instanceof User) {
+    return activeUser
+  }
+
+  const session = cachedSession ?? (await getSessionFromRequest(req))
+  return await User.fromSession(session)
+}
+
+async function sendErrorResponse(
+  req: Request,
+  res: Response,
+  error: Error,
+  options: RequireGuardOptions
+) {
+  const { responseCallback } = options
+
+  if (responseCallback) {
+    const result = responseCallback(req, res, error)
+    if (result instanceof Promise) {
+      await result
+    }
+    return
+  }
+
+  if (
+    !(
+      error instanceof SessionInvalidError ||
+      error instanceof SessionExpiredError ||
+      error instanceof UserInvalidError ||
+      error instanceof UserAuthenticationError ||
+      error instanceof GroupNotAMemberError
+    )
+  ) {
+    throw error
+  }
+
+  const { responseCode, responseData, headers } = options
+  res.status(responseCode as number)
+  res.set(headers)
+  res.send(responseData)
+}
+
 export function requireSession(
   options: RequireGuardOptions = {}
 ): RequestHandler {
+  const userOptions: RequireGuardOptions = {
+    responseCode: 401,
+    responseData: {
+      error: options.responseCode ?? 401,
+      description:
+        "Invalid or missing session toke, or session has expired.",
+    },
+    headers: { "Content-type": "application/json" },
+  }
+  Object.assign(userOptions, options)
+
   return async (
     req: Request,
     res: Response,
     next: NextFunction
   ): Promise<void> => {
-    const userOptions: RequireGuardOptions = {
-      responseCode: 401,
-      responseData: {
-        error: options.responseCode ?? 401,
-        description:
-          "Invalid or missing session toke, or session has expired.",
-      },
-      headers: { "Content-type": "application/json" },
-    }
-    Object.assign(userOptions, options)
-
     try {
-      const session = await getSessionFromRequest(req)
-      ;(req as RequestWithIdentity).session = session
+      const session = await getSessionFromRequest(req).catch((e) => e)
+
+      if (!(session instanceof Session)) {
+        await sendErrorResponse(req, res, session, userOptions)
+        return
+      }
+
       if (userOptions.update) {
         await session.updateLifetime(
           userOptions.update.lifetime,
           userOptions.update.renewalPeriod
         )
       }
+
+      ;(req as RequestWithIdentity).session = session
+
       next()
     } catch (e) {
-      const { responseCallback } = userOptions
-
-      if (responseCallback) {
-        const result = responseCallback(req, res, e as Error)
-        if (result instanceof Promise) {
-          await result
-        }
-        return
-      }
-
-      if (
-        !(
-          e instanceof SessionInvalidError ||
-          e instanceof SessionExpiredError
-        )
-      ) {
-        throw e
-      }
-
-      const { responseCode, responseData, headers } = userOptions
-      res.status(responseCode as number)
-      res.set(headers)
-      res.send(responseData)
+      next(e)
     }
   }
 }
@@ -115,82 +159,251 @@ export function requireSession(
 export function requireLogin(
   options: RequireGuardOptions = {}
 ): RequestHandler {
+  const userOptions: RequireGuardOptions = {
+    responseCode: 403,
+    responseData: {
+      error: options.responseCode ?? 403,
+      description: "You are not logged in.",
+    },
+    headers: { "Content-type": "application/json" },
+  }
+  Object.assign(userOptions, options)
+
   return async (
     req: Request,
     res: Response,
     next: NextFunction
   ): Promise<void> => {
-    const userOptions: RequireGuardOptions = {
-      responseCode: 403,
-      responseData: {
-        error: options.responseCode ?? 403,
-        description: "You are not logged in.",
-      },
-      headers: { "Content-type": "application/json" },
-    }
-    Object.assign(userOptions, options)
-    const { responseCallback } = userOptions
-
-    let session: Session | undefined
     try {
-      session = await getSessionFromRequest(req)
+      const session = await getSessionFromRequest(req).catch((e) => e)
+
+      if (!(session instanceof Session)) {
+        await sendErrorResponse(req, res, session, userOptions)
+        return
+      }
+
       if (userOptions.update) {
         await session.updateLifetime(
           userOptions.update.lifetime,
           userOptions.update.renewalPeriod
         )
       }
-    } catch (e) {
-      if (responseCallback) {
-        const result = responseCallback(req, res, e as Error)
-        if (result instanceof Promise) {
-          await result
-        }
+
+      const user = await getUserFromRequest(req, session).catch(
+        (e) => e
+      )
+
+      if (!(user instanceof User)) {
+        await sendErrorResponse(req, res, user, userOptions)
         return
       }
 
-      if (
-        !(
-          e instanceof SessionInvalidError ||
-          e instanceof SessionExpiredError
-        )
-      ) {
-        throw e
-      }
-      const { responseCode, responseData, headers } = userOptions
-      res.status(responseCode as number)
-      res.set(headers)
-      res.send(responseData)
-      return
-    }
-
-    try {
-      const user = await User.fromSession(session as Session)
       ;(req as RequestWithIdentity).session = session
       ;(req as RequestWithIdentity).user = user
       next()
     } catch (e) {
-      if (responseCallback) {
-        const result = responseCallback(req, res, e as Error)
-        if (result instanceof Promise) {
-          await result
-        }
+      next(e)
+    }
+  }
+}
+
+export function requireAnyGroup(
+  groups: string[],
+  options: RequireGuardOptions = {}
+) {
+  const userOptions: RequireGuardOptions = {
+    responseCode: 403,
+    responseData: {
+      error: options.responseCode ?? 403,
+      description: "You are not a member of the right group.",
+    },
+    headers: { "Content-type": "application/json" },
+  }
+  Object.assign(userOptions, options)
+
+  return async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const session = await getSessionFromRequest(req).catch((e) => e)
+
+      if (!(session instanceof Session)) {
+        await sendErrorResponse(req, res, session, userOptions)
         return
       }
 
-      if (
-        !(
-          e instanceof UserInvalidError ||
-          e instanceof UserAuthenticationError
+      if (userOptions.update) {
+        await session.updateLifetime(
+          userOptions.update.lifetime,
+          userOptions.update.renewalPeriod
         )
-      ) {
-        throw e
       }
 
-      const { responseCode, responseData, headers } = userOptions
-      res.status(responseCode as number)
-      res.set(headers)
-      res.send(responseData)
+      const user = await getUserFromRequest(req, session).catch(
+        (e) => e
+      )
+
+      if (!(user instanceof User)) {
+        await sendErrorResponse(req, res, user, userOptions)
+        return
+      }
+
+      const userGroups = new Set(user.listGroups())
+      let userIsAuthorized = false
+
+      for (const allowedGroup of groups) {
+        if (userGroups.has(allowedGroup)) {
+          userIsAuthorized = true
+          break
+        }
+      }
+
+      if (!userIsAuthorized) {
+        await sendErrorResponse(
+          req,
+          res,
+          new GroupNotAMemberError(
+            `Failed to authorize user '${user.getUsername()}': Not a member of any of the allowed groups ${JSON.stringify(
+              groups
+            )}`
+          ),
+          userOptions
+        )
+        return
+      }
+
+      ;(req as RequestWithIdentity).session = session
+      ;(req as RequestWithIdentity).user = user
+      next()
+    } catch (e) {
+      next(e)
     }
+  }
+}
+
+export function requireAllGroups(
+  groups: string[],
+  options: RequireGuardOptions = {}
+) {
+  const userOptions: RequireGuardOptions = {
+    responseCode: 403,
+    responseData: {
+      error: options.responseCode ?? 403,
+      description: "You are not a member of the right groups.",
+    },
+    headers: { "Content-type": "application/json" },
+  }
+  Object.assign(userOptions, options)
+
+  return async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    try {
+      const session = await getSessionFromRequest(req).catch((e) => e)
+
+      if (!(session instanceof Session)) {
+        await sendErrorResponse(req, res, session, userOptions)
+        return
+      }
+
+      if (userOptions.update) {
+        await session.updateLifetime(
+          userOptions.update.lifetime,
+          userOptions.update.renewalPeriod
+        )
+      }
+
+      const user = await getUserFromRequest(req, session).catch(
+        (e) => e
+      )
+
+      if (!(user instanceof User)) {
+        await sendErrorResponse(req, res, user, userOptions)
+        return
+      }
+
+      const userGroups = user.listGroups()
+      const userIsAuthorized = groups.every((item) =>
+        userGroups.includes(item)
+      )
+
+      if (!userIsAuthorized) {
+        await sendErrorResponse(
+          req,
+          res,
+          new GroupNotAMemberError(
+            `Failed to authorize user '${user.getUsername()}': Not a member of all the required groups ${JSON.stringify(
+              groups
+            )}`
+          ),
+          userOptions
+        )
+        return
+      }
+
+      ;(req as RequestWithIdentity).session = session
+      ;(req as RequestWithIdentity).user = user
+      next()
+    } catch (e) {
+      next(e)
+    }
+  }
+}
+
+export function requireCondition(
+  accessCheckCallback: AccessCheckCallback,
+  options: RequireGuardOptions = {}
+) {
+  const userOptions: RequireGuardOptions = {
+    responseCode: 403,
+    responseData: {
+      error: options.responseCode ?? 403,
+      description:
+        "You do not satisfy the condition for authorization.",
+    },
+    headers: { "Content-type": "application/json" },
+  }
+  Object.assign(userOptions, options)
+
+  return async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    const session = await getSessionFromRequest(req).catch((e) => e)
+
+    if (session instanceof Session) {
+      ;(req as RequestWithIdentity).session = session
+      if (userOptions.update) {
+        await session.updateLifetime(
+          userOptions.update.lifetime,
+          userOptions.update.renewalPeriod
+        )
+      }
+    }
+
+    const user = await getUserFromRequest(req, session).catch(
+      (e) => e
+    )
+
+    if (user instanceof User) {
+      ;(req as RequestWithIdentity).user = user
+    }
+
+    try {
+      let authorizationResult = accessCheckCallback(req, res)
+      if (authorizationResult instanceof Promise) {
+        authorizationResult = await authorizationResult
+      }
+    } catch (e) {
+      await sendErrorResponse(req, res, e as Error, userOptions)
+      return
+    }
+
+    next()
   }
 }

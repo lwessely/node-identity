@@ -20,6 +20,7 @@ import {
   GroupHasMemberError,
   GroupInvalidError,
   GroupProgramError,
+  GroupNotAMemberError,
 } from "../src/group"
 import * as routes from "../src/routes"
 
@@ -46,4 +47,5 @@ test("Exports members correctly", () => {
   expect(identity.GroupHasMemberError).toBe(GroupHasMemberError)
   expect(identity.GroupInvalidError).toBe(GroupInvalidError)
   expect(identity.GroupProgramError).toBe(GroupProgramError)
+  expect(identity.GroupNotAMemberError).toBe(GroupNotAMemberError)
 })
