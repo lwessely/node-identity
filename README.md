@@ -373,3 +373,6 @@ user = await User.get(user.getUsername()) // Get a fresh instance of the user
 const groupList = user.listGroups() // will correctly contain 'my-group'
 const memberList = await Group.listMembers() // will still correctly contain 'my-user'
 ```
+
+# ToDos
+- Add tests to all methods that update or delete from the database to make sure only the desired row is affected
