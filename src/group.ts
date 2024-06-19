@@ -176,6 +176,6 @@ export class Group {
     await this.db
       .del()
       .from("group_members")
-      .where({ user_id: user.getId() })
+      .where({ user_id: user.getId(), group_id: this.getId() })
   }
 }
