@@ -376,3 +376,5 @@ const memberList = await Group.listMembers() // will still correctly contain 'my
 
 # ToDos
 - Add tests to all methods that update or delete from the database to make sure only the desired row is affected
+- Add method to list all users with paging functionality
+- Add method to list all users with paging functionality
