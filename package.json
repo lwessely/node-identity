@@ -11,7 +11,7 @@
   ],
   "main": "./dist/index.js",
   "scripts": {
-    "test": "jest"
+    "test": "jest --runInBand"
   },
   "author": "Laurenz Wessely",
   "license": "Apache-2.0",

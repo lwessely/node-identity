@@ -421,5 +421,4 @@ const memberList = await identity.group.listMembers() // will still correctly co
 
 # ToDos
 - Add tests to all methods that update or delete from the database to make sure only the desired row is affected
-- Add method to list all users with paging functionality
 - Add method to list all groups with paging functionality
