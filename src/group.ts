@@ -1,5 +1,6 @@
 import knex from "knex"
 import { User } from "./user"
+import { Schema } from "./schema"
 
 export class GroupExistsError extends Error {}
 export class GroupInvalidError extends Error {}
@@ -7,96 +8,77 @@ export class GroupProgramError extends Error {}
 export class GroupHasMemberError extends Error {}
 export class GroupNotAMemberError extends Error {}
 
-export class Group {
-  static db: knex.Knex | null = null
+export class GroupAdmin {
+  public schema: Schema
 
-  constructor(
-    private db: knex.Knex,
-    private id: number,
-    private name: string
-  ) {}
-
-  static async connect(db: knex.Knex): Promise<void> {
-    this.db = db
-    await this.ensureDatabaseSchema()
+  constructor(public db: knex.Knex | knex.Knex.Transaction) {
+    this.schema = new Schema(db, "group_schema", [
+      {
+        up: async (db) => {
+          await db.schema.createTable("group_names", (table) => {
+            table.increments("id")
+            table.string("name").notNullable().unique()
+            table
+              .datetime("created")
+              .notNullable()
+              .defaultTo(db.fn.now())
+            table.index("name", "group_names_name_index")
+          })
+        },
+        down: async (db) => {
+          await db.schema.dropTableIfExists("group_names")
+        },
+      },
+      {
+        up: async (db) => {
+          await db.schema.createTable("group_members", (table) => {
+            table.increments("id")
+            table
+              .integer("group_id")
+              .unsigned()
+              .references("id")
+              .inTable("group_names")
+              .onDelete("CASCADE")
+            table
+              .integer("user_id")
+              .unsigned()
+              .references("id")
+              .inTable("user_accounts")
+              .onDelete("CASCADE")
+            table
+              .datetime("added")
+              .notNullable()
+              .defaultTo(db.fn.now())
+          })
+        },
+        down: async (db) => {
+          await db.schema.dropTableIfExists("group_names")
+        },
+      },
+    ])
   }
 
-  private static async ensureDatabaseSchema(): Promise<void> {
-    const db = this.db as knex.Knex
-    let dbInitialized = await db.schema.hasTable("group_schema")
-
-    if (!dbInitialized) {
-      await db.schema.createTable("group_schema", (table) => {
-        table.increments("schema_version")
-      })
-    }
-
-    const schemaVersionResult = await db("group_schema")
-      .select("schema_version")
-      .orderBy("schema_version", "desc")
-      .limit(1)
-    let schemaVersion = schemaVersionResult[0]?.schema_version ?? 0
-
-    if (schemaVersion < 1) {
-      await db.schema.createTable("group_names", (table) => {
-        table.increments("id")
-        table.string("name").notNullable().unique()
-        table.index("name", "group_names_name_index")
-      })
-      await db.schema.createTable("group_members", (table) => {
-        table.increments("id")
-        table
-          .integer("group_id")
-          .unsigned()
-          .references("id")
-          .inTable("group_names")
-          .onDelete("CASCADE")
-        table
-          .integer("user_id")
-          .unsigned()
-          .references("id")
-          .inTable("user_accounts")
-          .onDelete("CASCADE")
-      })
-      await db.insert({}).into("group_schema")
-    }
-  }
-
-  private static ensureDatabaseConnection() {
-    if (this.db === null) {
-      throw new GroupProgramError(
-        "Operation failed: You need to provide a database object to 'Group.connect()' first."
-      )
-    }
-
-    return this.db
-  }
-
-  static async create(name: string): Promise<Group> {
-    const db = this.ensureDatabaseConnection()
-
+  async create(name: string): Promise<Group> {
     if (await this.exists(name)) {
       throw new GroupExistsError(
         `Failed to create group: Group with name '${name}' already exists.`
       )
     }
 
-    await db("group_names").insert({ name })
-    return await Group.get(name)
+    await this.db("group_names").insert({ name })
+    return await this.get(name)
   }
 
-  static async exists(name: string): Promise<boolean> {
-    const db = this.ensureDatabaseConnection()
-    const groupResult = await db
+  async exists(name: string): Promise<boolean> {
+    const groupResult = await this.db
       .select("id")
       .from("group_names")
       .where({ name })
     return groupResult.length > 0
   }
 
-  static async get(name: string): Promise<Group> {
-    const db = this.ensureDatabaseConnection()
-    const groupResult = await db
+  async get(name: string): Promise<Group> {
+    const groupResult = await this.db
       .select("id", "name")
       .from("group_names")
       .where({ name })
@@ -108,19 +90,28 @@ export class Group {
     }
 
     const row = groupResult[0]
-    return new Group(db, row.id, row.name)
+    return new Group(this.db, row.id, row.name)
   }
 
-  static async remove(name: string): Promise<void> {
+  async remove(name: string): Promise<void> {
     if (!(await this.exists(name))) {
       throw new GroupInvalidError(
         `Failed to remove group '${name}': No group with that name exists.`
       )
     }
 
-    const db = this.ensureDatabaseConnection()
-    await db.del().from("group_names").where({ name })
+    await this.db.del().from("group_names").where({ name })
   }
+}
+
+export class Group {
+  static db: knex.Knex | null = null
+
+  constructor(
+    private db: knex.Knex,
+    private id: number,
+    private name: string
+  ) {}
 
   getId(): number {
     return this.id

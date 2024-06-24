@@ -2,16 +2,20 @@ import { afterAll, beforeAll, expect, test } from "@jest/globals"
 import knex from "knex"
 import {
   Session,
+  SessionAdmin,
   SessionExpiredError,
   SessionInvalidError,
   SessionRenewalError,
 } from "../src/session"
-import { Group } from "../src/group"
-import { User, UserAuthenticationError } from "../src/user"
+import { Group, GroupAdmin } from "../src/group"
+import { User, UserAdmin, UserAuthenticationError } from "../src/user"
 
 let sessionId = -1
 let sessionToken: string = ""
 let db: knex.Knex
+let userAdmin: UserAdmin
+let groupAdmin: GroupAdmin
+let sessionAdmin: SessionAdmin
 
 beforeAll(async () => {
   db = knex({
@@ -24,45 +28,34 @@ beforeAll(async () => {
       database: "users_test",
     },
   })
-  User.connect(db)
-  Group.connect(db)
+
+  userAdmin = new UserAdmin(db)
+  await userAdmin.schema.build()
+
+  groupAdmin = new GroupAdmin(db)
+  await groupAdmin.schema.build()
+
+  sessionAdmin = new SessionAdmin(db)
+  await sessionAdmin.schema.build()
 })
 
 afterAll(async () => {
-  await User.remove("session-test-user")
-  await Group.remove("session-test-group1")
-  await Group.remove("session-test-group2")
-  await Group.remove("session-test-group3")
+  await userAdmin.remove("session-test-user")
+  await groupAdmin.remove("session-test-group1")
+  await groupAdmin.remove("session-test-group2")
+  await groupAdmin.remove("session-test-group3")
   await db.destroy()
 })
 
-test("Sets up the session database correctly", async () => {
-  await Session.connect(db)
-  const sessionSchemaResult = await db
-    .select("schema_version")
-    .from("session_schema")
-  expect(sessionSchemaResult).toStrictEqual([
-    { schema_version: 1 },
-    { schema_version: 2 },
-    { schema_version: 3 },
-  ])
-  expect(await db.schema.hasTable("session_tokens")).toBe(true)
-})
-
 test("Session database is not set up twice accidentally", async () => {
-  await Session.connect(db)
   const sessionSchemaResult = await db
-    .select("schema_version")
+    .select("migration_number")
     .from("session_schema")
-  expect(sessionSchemaResult).toStrictEqual([
-    { schema_version: 1 },
-    { schema_version: 2 },
-    { schema_version: 3 },
-  ])
+  expect(sessionSchemaResult).toStrictEqual([{ migration_number: 1 }])
 })
 
 test("Creates a session", async () => {
-  const session = await Session.create()
+  const session = await sessionAdmin.create()
   sessionId = session.getId()
   expect(typeof sessionId).toBe("number")
   expect(session.getUserId()).toBe(null)
@@ -73,16 +66,16 @@ test("Creates a session", async () => {
 
 test("Opens a session", async () => {
   {
-    const session = await Session.open(sessionToken)
+    const session = await sessionAdmin.open(sessionToken)
     expect(session.getId()).toBe(sessionId)
     expect(session.getUserId()).toBe(null)
     expect(session.getToken()).toBe(sessionToken)
   }
   {
-    const session = await Session.create({ seconds: -1 })
+    const session = await sessionAdmin.create({ seconds: -1 })
 
     try {
-      await Session.open(session.getToken())
+      await sessionAdmin.open(session.getToken())
       expect(true).toBe(false)
     } catch (e) {
       expect(e).toBeInstanceOf(SessionExpiredError)
@@ -93,30 +86,29 @@ test("Opens a session", async () => {
 })
 
 test("Sets a session's user id", async () => {
-  User.connect(db)
-  const user = await User.create("session-test-user")
-  const session = await Session.open(sessionToken)
+  const user = await userAdmin.create("session-test-user")
+  const session = await sessionAdmin.open(sessionToken)
   expect(session.getUserId()).toBe(null)
   await session.setUserId(user.getId())
   expect(session.getUserId()).toBe(user.getId())
-  const sessionCopy = await Session.open(sessionToken)
+  const sessionCopy = await sessionAdmin.open(sessionToken)
   expect(sessionCopy.getUserId()).toBe(user.getId())
 })
 
 test("Discards a session's user id", async () => {
-  const session = await Session.open(sessionToken)
-  const user = await User.get("session-test-user")
+  const session = await sessionAdmin.open(sessionToken)
+  const user = await userAdmin.get("session-test-user")
   expect(session.getUserId()).toBe(user.getId())
   await session.discardUserId()
   expect(session.getUserId()).toBe(null)
-  const sessionCopy = await Session.open(sessionToken)
+  const sessionCopy = await sessionAdmin.open(sessionToken)
   expect(sessionCopy.getUserId()).toBe(null)
 })
 
 test("Logs in a user", async () => {
-  const user = await User.get("session-test-user")
+  const user = await userAdmin.get("session-test-user")
   expect(user.isAuthenticated()).toBe(false)
-  const session = await Session.open(sessionToken)
+  const session = await sessionAdmin.open(sessionToken)
   expect(session.getUserId()).toBe(null)
   await user.setPassword("test-password")
 
@@ -132,22 +124,22 @@ test("Logs in a user", async () => {
   expect(session.getUserId()).toBe(user.getId())
   expect(user.isAuthenticated()).toBe(true)
 
-  const sessionCopy = Session.open(sessionToken)
+  const sessionCopy = sessionAdmin.open(sessionToken)
   expect((await sessionCopy).getUserId()).toBe(user.getId())
 })
 
 test("Gets a user from a session", async () => {
-  const group1 = await Group.create("session-test-group1")
-  await Group.create("session-test-group2")
-  const group3 = await Group.create("session-test-group3")
+  const group1 = await groupAdmin.create("session-test-group1")
+  await groupAdmin.create("session-test-group2")
+  const group3 = await groupAdmin.create("session-test-group3")
   {
-    const user = await User.get("session-test-user")
+    const user = await userAdmin.get("session-test-user")
     group1.addMember(user)
     group3.addMember(user)
   }
   {
-    const session = await Session.open(sessionToken)
-    const user = await User.fromSession(session)
+    const session = await sessionAdmin.open(sessionToken)
+    const user = await userAdmin.fromSession(session)
     expect(session.getUserId()).toBe(user.getId())
     expect(user.getUsername()).toBe("session-test-user")
     expect(user.isAuthenticated()).toBe(true)
@@ -159,10 +151,10 @@ test("Gets a user from a session", async () => {
 })
 
 test("Prevents logging out user from wrong session", async () => {
-  const session = await Session.open(sessionToken)
-  const user = await User.fromSession(session)
-  const wrongSession = await Session.create()
-  const newUser = await User.create("new-session-test-user")
+  const session = await sessionAdmin.open(sessionToken)
+  const user = await userAdmin.fromSession(session)
+  const wrongSession = await sessionAdmin.create()
+  const newUser = await userAdmin.create("new-session-test-user")
   await newUser.setPassword("123")
   await newUser.login(wrongSession, "123")
 
@@ -176,25 +168,25 @@ test("Prevents logging out user from wrong session", async () => {
   expect(wrongSession.getUserId()).toBe(newUser.getId())
   expect(session.getUserId()).toBe(user.getId())
 
-  await User.remove("new-session-test-user")
+  await userAdmin.remove("new-session-test-user")
   await wrongSession.destroy()
 })
 
 test("Logs out a user", async () => {
-  const session = await Session.open(sessionToken)
-  const user = await User.fromSession(session)
+  const session = await sessionAdmin.open(sessionToken)
+  const user = await userAdmin.fromSession(session)
   expect(session.getUserId()).toBe(user.getId())
   expect(user.isAuthenticated()).toBe(true)
   await user.logout(session)
   expect(session.getUserId()).toBe(null)
   expect(user.isAuthenticated()).toBe(false)
 
-  const sessionCopy = await Session.open(sessionToken)
+  const sessionCopy = await sessionAdmin.open(sessionToken)
   expect(sessionCopy.getUserId()).toBe(null)
 })
 
 test("Sets and gets a session's expiration and renewal date", async () => {
-  const session = await Session.create(
+  const session = await sessionAdmin.create(
     {
       years: 1,
       months: 3,
@@ -237,7 +229,7 @@ test("Sets and gets a session's expiration and renewal date", async () => {
     ).toBeGreaterThanOrEqual(0)
   }
   {
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
 
     const expirationDate = sessionCopy.getExpirationDate()
     expect(
@@ -263,7 +255,7 @@ test("Sets and gets a session's expiration and renewal date", async () => {
 })
 
 test("Changes a session's lifespan and renewal period", async () => {
-  const session = await Session.create({ days: 1 }, { days: 2 })
+  const session = await sessionAdmin.create({ days: 1 }, { days: 2 })
 
   {
     const expectedExpirationDate = new Date(
@@ -318,7 +310,7 @@ test("Changes a session's lifespan and renewal period", async () => {
         (renewableUntilDate?.getTime() as number)
     ).toBeGreaterThanOrEqual(0)
 
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
     const expirationDateCopy = sessionCopy.getExpirationDate()
     expect(
       expectedExpirationDate.getTime() -
@@ -343,16 +335,19 @@ test("Changes a session's lifespan and renewal period", async () => {
 
 test("Renews a session", async () => {
   {
-    const session = await Session.create({ days: -1 }, { days: 2 })
+    const session = await sessionAdmin.create(
+      { days: -1 },
+      { days: 2 }
+    )
 
     try {
-      await Session.open(session.getToken())
+      await sessionAdmin.open(session.getToken())
       expect(true).toBe(false)
     } catch (e) {
       expect(e).toBeInstanceOf(SessionExpiredError)
     }
 
-    const renewedSession = await Session.renew(
+    const renewedSession = await sessionAdmin.renew(
       session.getToken(),
       { days: 5 },
       session.getRenewalToken() as string,
@@ -389,13 +384,16 @@ test("Renews a session", async () => {
       session.getRenewalToken()
     )
 
-    await Session.open(renewedSession.getToken())
+    await sessionAdmin.open(renewedSession.getToken())
     session.destroy()
   }
   {
-    const session = await Session.create({ days: -10 }, { days: 5 })
+    const session = await sessionAdmin.create(
+      { days: -10 },
+      { days: 5 }
+    )
     try {
-      await Session.renew(
+      await sessionAdmin.renew(
         session.getToken(),
         { days: 10 },
         session.getRenewalToken() as string,
@@ -409,7 +407,7 @@ test("Renews a session", async () => {
   }
   {
     try {
-      await Session.renew("x", { days: 10 }, "y", { days: 10 })
+      await sessionAdmin.renew("x", { days: 10 }, "y", { days: 10 })
       expect(true).toBe(false)
     } catch (e) {
       expect(e).toBeInstanceOf(SessionRenewalError)
@@ -418,54 +416,63 @@ test("Renews a session", async () => {
 })
 
 test("Purges dead sessions", async () => {
-  const survivor1 = await Session.create({ days: 5 }, { days: 10 })
-  const survivor2 = await Session.create({ days: -3 }, { days: 5 })
-  const purged1 = await Session.create({ days: -5 }, { days: 4 })
-  const purged2 = await Session.create({ days: -10 }, { days: 8 })
+  const survivor1 = await sessionAdmin.create(
+    { days: 5 },
+    { days: 10 }
+  )
+  const survivor2 = await sessionAdmin.create(
+    { days: -3 },
+    { days: 5 }
+  )
+  const purged1 = await sessionAdmin.create({ days: -5 }, { days: 4 })
+  const purged2 = await sessionAdmin.create(
+    { days: -10 },
+    { days: 8 }
+  )
 
-  await Session.open(survivor1.getToken())
+  await sessionAdmin.open(survivor1.getToken())
 
   try {
-    await Session.open(survivor2.getToken())
+    await sessionAdmin.open(survivor2.getToken())
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(SessionExpiredError)
   }
 
   try {
-    await Session.open(purged1.getToken())
+    await sessionAdmin.open(purged1.getToken())
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(SessionExpiredError)
   }
 
   try {
-    await Session.open(purged2.getToken())
+    await sessionAdmin.open(purged2.getToken())
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(SessionExpiredError)
   }
 
-  await Session.purge()
+  await sessionAdmin.purge()
 
-  await Session.open(survivor1.getToken())
+  await sessionAdmin.open(survivor1.getToken())
 
   try {
-    await Session.open(survivor2.getToken())
+    await sessionAdmin.open(survivor2.getToken())
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(SessionExpiredError)
   }
 
   try {
-    await Session.open(purged1.getToken())
+    await sessionAdmin.open(purged1.getToken())
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(SessionInvalidError)
   }
 
   try {
-    await Session.open(purged2.getToken())
+    await sessionAdmin.open(purged2.getToken())
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(SessionInvalidError)
@@ -476,11 +483,11 @@ test("Purges dead sessions", async () => {
 })
 
 test("Destroys a session", async () => {
-  const session = await Session.open(sessionToken)
+  const session = await sessionAdmin.open(sessionToken)
   await session.destroy()
 
   try {
-    await Session.open(sessionToken)
+    await sessionAdmin.open(sessionToken)
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(SessionInvalidError)

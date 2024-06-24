@@ -8,6 +8,11 @@
 This package helps you to quickly add user accounts, user groups, and sessions in your APIs/WebApps.
 
 ## Change log
+### v0.4.0
+- Breaking change: Moved all static methods from the Group, Session, and User classes to their new respective *Admin classes
+- Breaking change: New table schema & setup incompatible with previous one
+- Introduced new Identity class that allows for multiple operations within one transaction
+
 ### v0.3.1
 - Fixed issue: `group.removeMember()` now only removes the user from the specified group instead of all groups
 
@@ -50,116 +55,115 @@ npm install @lwtw/identity
 
 ## Usage
 
-### Connect to your database
+### Connect to your database, create schema
 ```ts
 import knex from "knex"
-import { User, Session } from "@lwtw/identity"
+import { Identity } from "@lwtw/identity"
 
 const db = knex(/* Your database connection parameters go here */)
+const identity = new Identity(db) // Create a new instance of the Identity class
 
-// This will provide the Session & User classes with your database connection,
-// and also initialize and update all necessary tables
-User.connect(db)
-Session.connect(db) // Make sure you always call User.connect() first, the session_tokens table references the user_accounts table
-Group.connect(db) // Make sure you always call User.connect() first, the group_member table references the user_accounts table
+await identity.user.schema.build() // Create the required user tables
+await identity.group.schema.build() // Create the required group tables - these reference the user_accounts table, so always build the user tables first
+await identity.session.schema.build() // Create the required session tables - these reference the user_accounts table, so always build the user tables first
 ```
 
 ### Create a new session and get the session token
 ```ts
-const session = await Session.create() // Create new session that expires after 30 days
+const session = await identity.session.create() // Create new session that expires after 30 days
 const sessionToken = session.getToken() // Get session token
-const longLivedSession = await Session.create({ months: 3, days: 15 }) // Create a new session that expires after 3 months and 15 days
+const longLivedSession = await identity.session.create({ months: 3, days: 15 }) // Create a new session that expires after 3 months and 15 days
 ```
 
 ### Open an existing session
 ```ts
-const session = await Session.open(sessionToken) // Open an existing session - This will throw if the session token is invalid, or the session has expired
+const session = await identity.session.open(sessionToken) // Open an existing session - This will throw if the session token is invalid, or the session has expired
 ```
 
 ### Renew a session
 ```ts
-const renewedSession = await Session.renew(expiredSessionToken, renewalTokenForExpiredSession) // Renew a session - this will generate a new session- and renewal token
+const renewedSession = await identity.session.renew(expiredSessionToken, renewalTokenForExpiredSession) // Renew a session - this will generate a new session- and renewal token
 ```
 
 
 ### Set a timer to purge sessions with expired renewal periods from the database once a day
 ```ts
 setInterval(() => {
-  Session.purge() // Purges all sessions with expired renewal periods
+  identity.session.purge() // Purges all sessions with expired renewal periods
 }, 24 * 60 * 60 * 1000 /* One day in milliseconds */)
 ```
 
 ### Destroy a session
 ```ts
-const session = await Session.open(sessionToken) // Open an existing session
+const session = await identity.session.open(sessionToken) // Open an existing session
 await session.destroy() // Destroy the session you just opened
 ```
 
 ### Create a new user and set their password
 ```ts
-const user = await User.create("my-user") // Create a new user
+const user = await identity.user.create("my-user") // Create a new user
 await user.setPassword("my secret password") // Set the password for the user you just created
 ```
 
 ### Get a user by username
 ```ts
-const user = await User.get("my-user") // Get a user by their username
+const user = await identity.user.get("my-user") // Get a user by their username
 ```
 
 ### Check if a user exists
 ```ts
-await userExists = await User.exists("my-user") // true if the user exists, false otherwise
+await userExists = await identity.user.exists("my-user") // true if the user exists, false otherwise
 ```
 
 ### Get user data
 ```ts
-const user = await User.get("my-user") // Get a user
+const user = await identity.user.get("my-user") // Get a user
 const username = user.getUsername() // Get their username
 const authenticated = user.isAuthenticated() // Check whether they are currently authenticated
 ```
 
 ### Check if a password is correct
 ```ts
-const user = await User.get("my-user") // Get a user
+const user = await identity.user.get("my-user") // Get a user
 const passwordIsCorrect = await user.verifyPassword("my secret password") // true if the password is correct, false otherwise
 ```
 
 ### Remove a user
 ```ts
-await User.remove("my-user")
+await identity.user.remove("my-user")
 ```
 
 ### Authenticate a user
 ```ts
-const user = await User.get("my-user") // Get a user
+const user = await identity.user.get("my-user") // Get a user
 await user.authenticate("my secret password") // Throws an error if the password is wrong
 const userIsAutheticated = user.isAuthenticated() // Will be true if authentication succeeded
 ```
 
 ### Log in a user to a session
 ```ts
-const session = await session.create() // Create a new session (you could also open an existing one)
-const user = await User.get("my-user") // Get the user
+const session = await identity.session.create() // Create a new session (you could also open an existing one)
+const user = await identity.user.get("my-user") // Get the user
 user.login(session, "my secret password") // Log in the user - This will throw if the password is wrong
 const userIsAutheticated = user.isAuthenticated() // Will be true if login succeeded
 ```
 
 ### Get a user from a session
 ```ts
-const session = await session.open(sessionToken) // Open an existing session
-const user = await User.fromSession(session) // Get the session user - this will throw if the session has no user logged in
+const session = await identity.session.open(sessionToken) // Open an existing session
+const user = await identity.user.fromSession(session) // Get the session user - this will throw if the session has no user logged in
 ```
 
 ### Log out a user from a session
 ```ts
-const session = await session.open(sessionToken) // Open an existing session
-const user = await User.fromSession(session) // Get the session user
+const session = await identity.session.open(sessionToken) // Open an existing session
+const user = await identity.user.fromSession(session) // Get the session user
 await user.logout(session) // Log out the user from this session
 ```
 
 ### Deal with user data
 ```ts
-const user = await User.get("my-user") // Get a user
+const user = await identity.user.get("my-user") // Get a user
 await user.setItems({ firstName: "Jane", lastName: "Doe", age: 28 }) // set values for custom keys 'firstName', 'lastName', and 'age'
 const { firstName, age } = await user.getItems(["firstName", "age"]) // Get values for keys 'firstName' and 'age'
 await user.removeItems(["firstName", "lastName"]) // Remove items 'firstName' and 'lastName'
@@ -167,56 +171,77 @@ await user.removeItems(["firstName", "lastName"]) // Remove items 'firstName' an
 
 ### Get names of groups the user is a member of
 ```ts
-const user = await User.get("my-user") // Get an existing user
+const user = await identity.user.get("my-user") // Get an existing user
 const groupNames = user.listGroups() // Get a list of all group names the user is a member of
 ```
 
 ### Create a group
 ```ts
-const newGroup = await Group.create("my-group") // Create a new group
+const newGroup = await identity.group.create("my-group") // Create a new group
 const groupName = newGroup.getName() // Get the name of the newly created group
 ```
 
 ### Check whether a group exists
 ```ts
-await groupExists = await Group.exists("my-group") // Resolves to true if the group exists, to false otherwise
+await groupExists = await identity.group.exists("my-group") // Resolves to true if the group exists, to false otherwise
 ```
 
 ### Get an existing group
 ```ts
-const existingGroup = await Group.get("my-group") // Get an existing group named 'my-group'
+const existingGroup = await identity.group.get("my-group") // Get an existing group named 'my-group'
 ```
 
 ### Add a user to a group
 ```ts
-const group = await Group.get("my-group") // Get an existing group
-const user = await User.get("my-user") // Get an existing user
+const group = await identity.group.get("my-group") // Get an existing group
+const user = await identity.user.get("my-user") // Get an existing user
 await group.addMember(user) // Add the user to the group
 ```
 
 ### Get usernames of group members
 ```ts
-const group = await Group.get("my-group") // Get an existing group
+const group = await identity.group.get("my-group") // Get an existing group
 const usernames = await group.listMembers() // Gets a list of all usernames of users that are a member of the group
 ```
 
 ### Check if user is a member of a group
 ```ts
-const group = await Group.get("my-group") // Get an existing group
-const user = await User.get("my-user") // Get an existing user
+const group = await identity.group.get("my-group") // Get an existing group
+const user = await identity.user.get("my-user") // Get an existing user
 const isMember = await group.hasMember(user) // Resolves to true if the user is a member of the group, to false otherwise
 ```
 
 ### Remove a user from a group
 ```ts
-const group = await Group.get("my-group") // Get an existing group
-const user = await User.get("my-user") // Get an existing user
+const group = await identity.group.get("my-group") // Get an existing group
+const user = await identity.user.get("my-user") // Get an existing user
 await group.removeMember(user) // Removes the user from the group
 ```
 
 ### Remove a group
 ```ts
-await Group.remove("my-group") // Remove a group
+await identity.group.remove("my-group") // Remove a group
+```
+
+### Perform multiple operations as one atomic operation
+```ts
+await identity.atomicOperation(async (atomic) => {
+    const user = await atomic.user.create("my-user")
+    await user.setPassword("123")
+    await user.setItems({
+      foo: "bar",
+      lorem: "ipsum",
+    })
+
+    const group = await atomic.group.create(
+      "my-group"
+    )
+    await group.addMember(user)
+
+    const session = await atomic.session.create()
+    await user.login(session, "123")
+  }) // Uses the same database transaction for all operations inside the callback
+     // If an error is thrown inside the callback, all the previous operations in the callback are rolled back
 ```
 
 ## Express middleware
@@ -227,10 +252,14 @@ Authorization header.
 ### Make a valid session required for a route
 ```ts
 import express, { Request, Response } from "express"
-import { requireSession, RequestWithIdentity } from "@lwtw/identity"
+import { Identity, requireSession, RequestWithIdentity } from "@lwtw/identity"
+import knex from "knex"
+
+const db = knex(/* Your database connection parameters go here */)
+const identity = new Identity(db) // Create a new instance of the Identity class
 
 app = express()
-app.use("/session-required/", requireSession()) // This will respond with an error if the request includes no valid session token
+app.use("/session-required/", requireSession(identity)) // This will respond with an error if the request includes no valid session token
 
 app.get("/session-required", (req: Request, res: Response) => {
   const { session } = req as RequestWithIdentity // Get the session from the request
@@ -240,10 +269,14 @@ app.get("/session-required", (req: Request, res: Response) => {
 ### Make a login required for a route
 ```ts
 import express, { Request, Response } from "express"
-import { requireLogin, RequestWithIdentity } from "@lwtw/identity"
+import { Identity, requireLogin, RequestWithIdentity } from "@lwtw/identity"
+import knex from "knex"
+
+const db = knex(/* Your database connection parameters go here */)
+const identity = new Identity(db) // Create a new instance of the Identity class
 
 app = express()
-app.use("/login-required/", requireLogin()) // This will respond with an error if the request includes no valid session token with a logged in user
+app.use("/login-required/", requireLogin(identity)) // This will respond with an error if the request includes no valid session token with a logged in user
 
 app.get("/login-required", (req: Request, res: Response) => {
   const { session, user } = req as RequestWithIdentity // Get the session and user from the request
@@ -253,12 +286,16 @@ app.get("/login-required", (req: Request, res: Response) => {
 ### Make it a requirement for the user to be in at least one group in a list
 ```ts
 import express, { Request, Response } from "express"
-import { requireAnyGroup, RequestWithIdentity } from "@lwtw/identity"
+import { Identity, requireAnyGroup, RequestWithIdentity } from "@lwtw/identity"
+import knex from "knex"
+
+const db = knex(/* Your database connection parameters go here */)
+const identity = new Identity(db) // Create a new instance of the Identity class
 
 app = express()
 app.use(
     "/require-any-group",
-    requireAnyGroup(["this-group", "or-that-group", "or-even-this-group"])
+    requireAnyGroup(identity, ["this-group", "or-that-group", "or-even-this-group"])
   ) // Responds with an error if the request comes from a user who is not in at least one of these groups
 
 app.get("/require-any-group", (req: Request, res: Response) => {
@@ -269,12 +306,16 @@ app.get("/require-any-group", (req: Request, res: Response) => {
 ### Make it a requirement for the user to be in all groups in a list
 ```ts
 import express, { Request, Response } from "express"
-import { requireAllGroups, RequestWithIdentity } from "@lwtw/identity"
+import { Identity, requireAllGroups, RequestWithIdentity } from "@lwtw/identity"
+import knex from "knex"
+
+const db = knex(/* Your database connection parameters go here */)
+const identity = new Identity(db) // Create a new instance of the Identity class
 
 app = express()
 app.use(
     "/require-all-groups",
-    requireAllGroups(["this-group", "and-this-group", "this-group-as-well"])
+    requireAllGroups(identity, ["this-group", "and-this-group", "this-group-as-well"])
   ) // Responds with an error if the request comes from a user who is not in all of these groups
 
 app.get("/require-all-groups", (req: Request, res: Response) => {
@@ -285,12 +326,16 @@ app.get("/require-all-groups", (req: Request, res: Response) => {
 ### Make a custom requirement
 ```ts
 import express, { Request, Response } from "express"
-import { requireCondition, RequestWithIdentity, UserInvalidError } from "@lwtw/identity"
+import { Identity, User, Session, requireCondition, RequestWithIdentity, UserInvalidError } from "@lwtw/identity"
+import knex from "knex"
+
+const db = knex(/* Your database connection parameters go here */)
+const identity = new Identity(db) // Create a new instance of the Identity class
 
 app = express()
 app.use(
     "/require-condition",
-    requireCondition((req: Request, res: Response) => {
+    requireCondition(identity, (req: Request, res: Response) => {
       const { session, user } = req as RequestWithIdentity // Get the session and user from the request, if they are available
       const username = user instanceof User ? user.getUsername() : ""
       const sessionId = session instanceof Session ? session.getId() : ""
@@ -334,8 +379,8 @@ that any synchronous method returning data for a session or user (e.g. ```user.g
 may return stale information. Consider the following two examples:
 
 ```ts
-const originalSession = await Session.create({ days: 1 })
-const sessionCopy = await Session.open(originalSession.getToken())
+const originalSession = await identity.session.create({ days: 1 })
+const sessionCopy = await identity.session.open(originalSession.getToken())
 await sessionCopy.updateLifetime({ days: 10 })
 
 originalSession.getExpirationDate() // Will return a (stale) expiration date one day in the future
@@ -343,12 +388,12 @@ sessionCopy.getExpirationDate() // Will return an accurate expiration date 10 da
 ```
 
 ```ts
-const user = await User.create("my-user") // Create a new user
-const group = await Group.create("my-group") // Create a new, empty group
+const user = await identity.user.create("my-user") // Create a new user
+const group = await identity.group.create("my-group") // Create a new, empty group
 await group.addMember(user) // Add user to group
 
 const groupList = user.listGroups() // will be a stale (and thus empty) array
-const memberList = await Group.listMembers() // will correctly contain "my-user"
+const memberList = await identity.group.listMembers() // will correctly contain "my-user"
 ```
 
 For this reason, it is recommended to keep session and user objects alive for as short as possible. Short lifespans tend
@@ -364,17 +409,17 @@ client does not have to re-authenticate with every single request after the init
 If you need to make sure your data is as recent as possible, you can simply re-get a user or group, or re-open a session:
 
 ```ts
-let user = await User.create("my-user") // Create a new user
-const group = await Group.create("my-group") // Create a new, empty group
+let user = await identity.user.create("my-user") // Create a new user
+const group = await identity.group.create("my-group") // Create a new, empty group
 await group.addMember(user) // Add user to group
 
-user = await User.get(user.getUsername()) // Get a fresh instance of the user
+user = await identity.user.get(user.getUsername()) // Get a fresh instance of the user
 
 const groupList = user.listGroups() // will correctly contain 'my-group'
-const memberList = await Group.listMembers() // will still correctly contain 'my-user'
+const memberList = await identity.group.listMembers() // will still correctly contain 'my-user'
 ```
 
 # ToDos
 - Add tests to all methods that update or delete from the database to make sure only the desired row is affected
 - Add method to list all users with paging functionality
-- Add method to list all users with paging functionality
+- Add method to list all groups with paging functionality

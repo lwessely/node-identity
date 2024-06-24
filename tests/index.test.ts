@@ -1,7 +1,7 @@
 import { expect, test } from "@jest/globals"
-import * as identity from "../src/index"
 import {
   User,
+  UserAdmin,
   UserAuthenticationError,
   UserExistsError,
   UserInvalidError,
@@ -9,6 +9,7 @@ import {
 } from "../src/user"
 import {
   Session,
+  SessionAdmin,
   SessionInvalidError,
   SessionProgramError,
   SessionExpiredError,
@@ -16,16 +17,23 @@ import {
 } from "../src/session"
 import {
   Group,
+  GroupAdmin,
   GroupExistsError,
   GroupHasMemberError,
   GroupInvalidError,
   GroupProgramError,
   GroupNotAMemberError,
 } from "../src/group"
+import {
+  Identity,
+  IdentityNestedAtomicOperationError,
+} from "../src/identity"
+import * as identity from "../src/index"
 import * as routes from "../src/routes"
 
 test("Exports members correctly", () => {
   expect(identity.User).toBe(User)
+  expect(identity.UserAdmin).toBe(UserAdmin)
   expect(identity.UserAuthenticationError).toBe(
     UserAuthenticationError
   )
@@ -33,6 +41,7 @@ test("Exports members correctly", () => {
   expect(identity.UserInvalidError).toBe(UserInvalidError)
   expect(identity.UserProgramError).toBe(UserProgramError)
   expect(identity.Session).toBe(Session)
+  expect(identity.SessionAdmin).toBe(SessionAdmin)
   expect(identity.SessionInvalidError).toBe(SessionInvalidError)
   expect(identity.SessionProgramError).toBe(SessionProgramError)
   expect(identity.SessionExpiredError).toBe(SessionExpiredError)
@@ -46,9 +55,14 @@ test("Exports members correctly", () => {
   expect(identity.requireAllGroups).toBe(routes.requireAllGroups)
   expect(identity.requireCondition).toBe(routes.requireCondition)
   expect(identity.Group).toBe(Group)
+  expect(identity.GroupAdmin).toBe(GroupAdmin)
   expect(identity.GroupExistsError).toBe(GroupExistsError)
   expect(identity.GroupHasMemberError).toBe(GroupHasMemberError)
   expect(identity.GroupInvalidError).toBe(GroupInvalidError)
   expect(identity.GroupProgramError).toBe(GroupProgramError)
   expect(identity.GroupNotAMemberError).toBe(GroupNotAMemberError)
+  expect(identity.Identity).toBe(Identity)
+  expect(identity.IdentityNestedAtomicOperationError).toBe(
+    IdentityNestedAtomicOperationError
+  )
 })

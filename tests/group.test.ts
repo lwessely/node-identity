@@ -1,14 +1,17 @@
 import { afterAll, beforeAll, expect, test } from "@jest/globals"
 import knex from "knex"
-import { User } from "../src/user"
+import { User, UserAdmin } from "../src/user"
 import {
   Group,
+  GroupAdmin,
   GroupExistsError,
   GroupInvalidError,
   GroupNotAMemberError,
 } from "../src/group"
 
 let db: knex.Knex
+let userAdmin: UserAdmin
+let groupAdmin: GroupAdmin
 
 beforeAll(async () => {
   db = knex({
@@ -21,38 +24,34 @@ beforeAll(async () => {
       database: "users_test",
     },
   })
-  await User.connect(db)
+
+  userAdmin = new UserAdmin(db)
+  await userAdmin.schema.build()
+
+  groupAdmin = new GroupAdmin(db)
+  await groupAdmin.schema.build()
 })
 
 afterAll(async () => {
-  await User.remove("group-test-user-1")
-  await User.remove("group-test-user-2")
-  await User.remove("group-test-user-3")
+  await userAdmin.remove("group-test-user-1")
+  await userAdmin.remove("group-test-user-2")
+  await userAdmin.remove("group-test-user-3")
   await db.destroy()
 })
 
-test("Sets up the group database correctly", async () => {
-  await Group.connect(db)
-  const groupSchemaResult = await db
-    .select("schema_version")
-    .from("group_schema")
-  expect(groupSchemaResult).toStrictEqual([{ schema_version: 1 }])
-})
-
 test("Group database is not set up twice accidentally", async () => {
-  await Group.connect(db)
   const groupSchemaResult = await db
-    .select("schema_version")
+    .select("migration_number")
     .from("group_schema")
-  expect(groupSchemaResult).toStrictEqual([{ schema_version: 1 }])
+  expect(groupSchemaResult).toStrictEqual([{ migration_number: 2 }])
 })
 
 test("Creates a group", async () => {
-  const group = await Group.create("test-group")
+  const group = await groupAdmin.create("test-group")
   expect(group).toBeInstanceOf(Group)
 
   try {
-    await Group.create("test-group")
+    await groupAdmin.create("test-group")
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(GroupExistsError)
@@ -60,45 +59,45 @@ test("Creates a group", async () => {
 })
 
 test("Gets a group", async () => {
-  const group = await Group.get("test-group")
+  const group = await groupAdmin.get("test-group")
   expect(group).toBeInstanceOf(Group)
   expect(typeof group.getId()).toBe("number")
   expect(typeof group.getName()).toBe("string")
 
   try {
-    await Group.get("non-existant-group")
+    await groupAdmin.get("non-existant-group")
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(GroupInvalidError)
   }
 
-  const newGroup = await Group.create("new-group")
+  const newGroup = await groupAdmin.create("new-group")
   expect(typeof newGroup.getId()).toBe("number")
   expect(newGroup.getName()).toBe("new-group")
 
-  const newGroupCopy = await Group.get("new-group")
+  const newGroupCopy = await groupAdmin.get("new-group")
   expect(newGroupCopy.getId()).toBe(newGroup.getId())
   expect(newGroupCopy.getName()).toBe(newGroup.getName())
 
-  await Group.remove("new-group")
+  await groupAdmin.remove("new-group")
 })
 
 test("Adds members to a group", async () => {
-  const user1 = await User.create("group-test-user-1")
-  const user2 = await User.create("group-test-user-2")
-  await User.create("group-test-user-3")
+  const user1 = await userAdmin.create("group-test-user-1")
+  const user2 = await userAdmin.create("group-test-user-2")
+  await userAdmin.create("group-test-user-3")
 
-  const group = await Group.get("test-group")
+  const group = await groupAdmin.get("test-group")
   await group.addMember(user1)
   await group.addMember(user2)
 })
 
 test("Checks if user is member of a group", async () => {
-  const user1 = await User.get("group-test-user-1")
-  const user2 = await User.get("group-test-user-2")
-  const user3 = await User.get("group-test-user-3")
+  const user1 = await userAdmin.get("group-test-user-1")
+  const user2 = await userAdmin.get("group-test-user-2")
+  const user3 = await userAdmin.get("group-test-user-3")
 
-  const group = await Group.get("test-group")
+  const group = await groupAdmin.get("test-group")
 
   expect(await group.hasMember(user1)).toBe(true)
   expect(await group.hasMember(user2)).toBe(true)
@@ -106,8 +105,8 @@ test("Checks if user is member of a group", async () => {
 })
 
 test("Removes members from a group", async () => {
-  const user1 = await User.get("group-test-user-1")
-  const group = await Group.get("test-group")
+  const user1 = await userAdmin.get("group-test-user-1")
+  const group = await groupAdmin.get("test-group")
   await group.removeMember(user1)
 
   try {
@@ -119,27 +118,27 @@ test("Removes members from a group", async () => {
 })
 
 test("Lists group members", async () => {
-  const group = await Group.get("test-group")
+  const group = await groupAdmin.get("test-group")
   const members = await group.listMembers()
   expect(members).toStrictEqual(["group-test-user-2"])
 })
 
 test("Checks if a group exists", async () => {
-  expect(await Group.exists("test-group")).toBe(true)
-  expect(await Group.exists("non-existant-group")).toBe(false)
+  expect(await groupAdmin.exists("test-group")).toBe(true)
+  expect(await groupAdmin.exists("non-existant-group")).toBe(false)
 })
 
 test("Removes a group", async () => {
-  const group2 = await Group.create("second-test-group")
-  await Group.remove("test-group")
+  const group2 = await groupAdmin.create("second-test-group")
+  await groupAdmin.remove("test-group")
 
   try {
-    await Group.get("test-group")
+    await groupAdmin.get("test-group")
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(GroupInvalidError)
   }
 
-  await Group.get("second-test-group")
-  await Group.remove(group2.getName())
+  await groupAdmin.get("second-test-group")
+  await groupAdmin.remove(group2.getName())
 })

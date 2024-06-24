@@ -19,6 +19,7 @@ import {
   GroupNotAMemberError,
   GroupHasMemberError,
   SessionRenewalError,
+  Identity,
 } from "../src/index"
 
 const app = express()
@@ -35,27 +36,29 @@ const db = knex({
   },
 })
 
-async function init() {
-  await User.connect(db)
-  await Session.connect(db)
-  await Group.connect(db)
+let identity = new Identity(db)
 
-  const admin = await User.create("admin")
+async function init() {
+  identity.user.schema.build()
+  identity.group.schema.build()
+  identity.session.schema.build()
+
+  const admin = await identity.user.create("admin")
   await admin.setPassword("password")
 
-  const adminGroup = await Group.create("administrators")
+  const adminGroup = await identity.group.create("administrators")
   await adminGroup.addMember(admin)
 
-  const user = await User.create("user")
+  const user = await identity.user.create("user")
   await user.setPassword("guest")
 
-  const userGroup = await Group.create("users")
+  const userGroup = await identity.group.create("users")
   await userGroup.addMember(user)
 
-  const logGroup = await Group.create("log")
+  const logGroup = await identity.group.create("log")
   await logGroup.addMember(user)
 
-  await Group.create("banned")
+  await identity.group.create("banned")
 
   console.log("Example users initialized")
 }
@@ -74,7 +77,10 @@ app.get(
   "/session",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const session = await Session.create({ days: 3 }, { days: 30 })
+      const session = await identity.session.create(
+        { days: 3 },
+        { days: 30 }
+      )
 
       res.status(201)
       res.json({
@@ -93,7 +99,7 @@ app.put("/session", async (req: Request, res: Response) => {
   const { sessionToken, renewalToken } = req.body
 
   try {
-    const session = await Session.renew(
+    const session = await identity.session.renew(
       sessionToken,
       { days: 3 },
       renewalToken,
@@ -123,7 +129,7 @@ app.put("/session", async (req: Request, res: Response) => {
 /* Require session for all routes after this */
 app.use(
   "/",
-  requireSession({
+  requireSession(identity, {
     responseCallback: (req: Request, res: Response, error: Error) => {
       let responseData = {
         success: false,
@@ -180,7 +186,7 @@ app.post(
       const { username, password } = req.body
 
       try {
-        const user = await User.get(username)
+        const user = await identity.user.get(username)
         await user.login(session, password)
         responseData.success = true
       } catch (e) {
@@ -206,7 +212,7 @@ app.post(
 /* Require login for all routes after this */
 app.use(
   "/",
-  requireLogin({
+  requireLogin(identity, {
     responseCallback: (req: Request, res: Response, error: Error) => {
       let responseData = {
         success: false,
@@ -231,7 +237,7 @@ app.use(
 /* Require a user to either be an admin or in the 'log' group to create a log message */
 app.use(
   "/log",
-  requireAnyGroup(["admin", "log"], {
+  requireAnyGroup(identity, ["admin", "log"], {
     responseCallback: (
       req: RequestWithIdentity,
       res: Response,
@@ -257,6 +263,7 @@ app.post("/log", (req: RequestWithIdentity, res: Response) => {
 app.use(
   "/",
   requireCondition(
+    identity,
     (req: RequestWithIdentity) => {
       const user = req.user as User
       const groups = user.listGroups()
@@ -322,7 +329,7 @@ app.post(
 /* Make routes inside /admin require admin privileges */
 app.use(
   "/admin",
-  requireAllGroups(["administrators"], {
+  requireAllGroups(identity, ["administrators"], {
     responseCallback: (req: Request, res: Response, error: Error) => {
       if (!(error instanceof GroupNotAMemberError)) {
         throw error
@@ -348,7 +355,7 @@ app.get(
     try {
       const admin = req.user as User
       const { username } = req.body
-      const user = await User.get(username).catch(() => null)
+      const user = await identity.user.get(username).catch(() => null)
 
       if (!user) {
         res.status(404)
@@ -381,7 +388,7 @@ app.post(
   ) => {
     try {
       const { username } = req.body
-      const user = await User.get(username).catch(() => null)
+      const user = await identity.user.get(username).catch(() => null)
 
       if (!user) {
         res.status(404)
@@ -392,7 +399,7 @@ app.post(
         return
       }
 
-      const group = await Group.get("banned")
+      const group = await identity.group.get("banned")
 
       try {
         group.addMember(user)
@@ -422,7 +429,7 @@ app.post(
   ) => {
     try {
       const { username } = req.body
-      const user = await User.get(username).catch(() => null)
+      const user = await identity.user.get(username).catch(() => null)
 
       if (!user) {
         res.status(404)
@@ -433,7 +440,7 @@ app.post(
         return
       }
 
-      const group = await Group.get("banned")
+      const group = await identity.group.get("banned")
 
       try {
         group.removeMember(user)
@@ -478,12 +485,12 @@ process.on("SIGINT", async () => {
   console.log("Cleaning up...")
 
   server.close()
-  await User.remove("admin")
-  await User.remove("user")
-  await Group.remove("administrators")
-  await Group.remove("users")
-  await Group.remove("banned")
-  await Group.remove("log")
+  await identity.user.remove("admin")
+  await identity.user.remove("user")
+  await identity.group.remove("administrators")
+  await identity.group.remove("users")
+  await identity.group.remove("banned")
+  await identity.group.remove("log")
   await db.destroy()
 
   console.log("Exited cleanly")

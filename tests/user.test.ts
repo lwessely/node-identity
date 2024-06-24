@@ -1,13 +1,16 @@
 import { afterAll, beforeAll, expect, test } from "@jest/globals"
 import {
+  UserAdmin,
   User,
   UserAuthenticationError,
   UserInvalidError,
 } from "../src/user"
-import { Group } from "../src/group"
+import { GroupAdmin } from "../src/group"
 import knex from "knex"
 
 let db: knex.Knex
+let userAdmin: UserAdmin
+let groupAdmin: GroupAdmin
 
 beforeAll(async () => {
   db = knex({
@@ -20,65 +23,56 @@ beforeAll(async () => {
       database: "users_test",
     },
   })
+
+  userAdmin = new UserAdmin(db)
+  await userAdmin.schema.build()
+
+  groupAdmin = new GroupAdmin(db)
+  await groupAdmin.schema.build()
 })
 
 afterAll(async () => {
   await db.destroy()
 })
 
-test("Sets up the user database correctly", async () => {
-  await User.connect(db)
-  const userSchemaResult = await db
-    .select("schema_version")
-    .from("user_schema")
-  expect(userSchemaResult).toStrictEqual([
-    { schema_version: 1 },
-    { schema_version: 2 },
-  ])
-  expect(await db.schema.hasTable("user_accounts")).toBe(true)
-})
-
 test("User database is not set up twice accidentally", async () => {
-  await User.connect(db)
+  await userAdmin.schema.build()
   const userSchemaResult = await db
-    .select("schema_version")
+    .select("migration_number")
     .from("user_schema")
-  expect(userSchemaResult).toStrictEqual([
-    { schema_version: 1 },
-    { schema_version: 2 },
-  ])
+  expect(userSchemaResult).toStrictEqual([{ migration_number: 2 }])
 })
 
 test("Creates a user", async () => {
-  const user = await User.create("test-user")
+  const user = await userAdmin.create("test-user")
   expect(user).toBeInstanceOf(User)
 })
 
 test("Checks if user exists", async () => {
-  expect(await User.exists("test-user")).toBe(true)
-  expect(await User.exists("bad-user")).toBe(false)
+  expect(await userAdmin.exists("test-user")).toBe(true)
+  expect(await userAdmin.exists("bad-user")).toBe(false)
 })
 
 test("Gets a user", async () => {
-  const user = await User.get("test-user")
+  const user = await userAdmin.get("test-user")
   expect(typeof user.getId()).toBe("number")
   expect(user.getUsername()).toBe("test-user")
   expect(user.isAuthenticated()).toBe(false)
 })
 
 test("Sets a user's password", async () => {
-  const user = await User.get("test-user")
+  const user = await userAdmin.get("test-user")
   await user.setPassword("test-password")
 })
 
 test("Checks a user's password", async () => {
-  const user = await User.get("test-user")
+  const user = await userAdmin.get("test-user")
   expect(await user.verifyPassword("test-password")).toBe(true)
   expect(await user.verifyPassword("wrong-password")).toBe(false)
 })
 
 test("Authenticates a user", async () => {
-  const user = await User.get("test-user")
+  const user = await userAdmin.get("test-user")
   expect(user.isAuthenticated()).toBe(false)
 
   try {
@@ -94,7 +88,7 @@ test("Authenticates a user", async () => {
 })
 
 test("Associates data with a user", async () => {
-  const user1 = await User.get("test-user")
+  const user1 = await userAdmin.get("test-user")
   await user1.setItems({ lorem: 1, ipsum: "user1-data", dolor: true })
   await user1.setItems({
     lorem: 2,
@@ -103,7 +97,7 @@ test("Associates data with a user", async () => {
     adipiscing: false,
   })
 
-  const user2 = await User.create("second-test-user")
+  const user2 = await userAdmin.create("second-test-user")
   await user2.setItems({
     lorem: 5,
     ipsum: "second-user-data",
@@ -118,15 +112,15 @@ test("Associates data with a user", async () => {
 })
 
 test("Deletes data associated with a user", async () => {
-  const user1 = await User.get("test-user")
+  const user1 = await userAdmin.get("test-user")
   await user1.removeItems(["amet"])
 
-  const user2 = await User.get("second-test-user")
+  const user2 = await userAdmin.get("second-test-user")
   await user2.removeItems(["foo"])
 })
 
 test("Gets data associated with a user", async () => {
-  const user1 = await User.get("test-user")
+  const user1 = await userAdmin.get("test-user")
   expect(
     await user1.getItems(["lorem", "ipsum", "dolor", "amet"])
   ).toStrictEqual({
@@ -135,7 +129,7 @@ test("Gets data associated with a user", async () => {
     dolor: true,
   })
 
-  const user2 = await User.get("second-test-user")
+  const user2 = await userAdmin.get("second-test-user")
   expect(
     await user2.getItems(["lorem", "ipsum", "dolor", "amet", "foo"])
   ).toStrictEqual({
@@ -147,43 +141,42 @@ test("Gets data associated with a user", async () => {
 })
 
 test("List names of groups the user is a member of", async () => {
-  await Group.connect(db)
-  const group1 = await Group.create("user-test-group1")
-  await Group.create("user-test-group2")
-  const group3 = await Group.create("user-test-group3")
+  const group1 = await groupAdmin.create("user-test-group1")
+  await groupAdmin.create("user-test-group2")
+  const group3 = await groupAdmin.create("user-test-group3")
 
   {
-    const user = await User.get("test-user")
+    const user = await userAdmin.get("test-user")
     await group1.addMember(user)
     await group3.addMember(user)
   }
 
-  const user = await User.get("test-user")
+  const user = await userAdmin.get("test-user")
   const groupNames = user.listGroups()
   expect(groupNames).toStrictEqual([
     "user-test-group1",
     "user-test-group3",
   ])
 
-  await Group.remove("user-test-group1")
-  await Group.remove("user-test-group2")
-  await Group.remove("user-test-group3")
+  await groupAdmin.remove("user-test-group1")
+  await groupAdmin.remove("user-test-group2")
+  await groupAdmin.remove("user-test-group3")
 })
 
 test("Removes a user", async () => {
-  await User.remove("test-user")
+  await userAdmin.remove("test-user")
 
   try {
-    await User.get("test-user")
+    await userAdmin.get("test-user")
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(UserInvalidError)
   }
 
-  await User.remove("second-test-user")
+  await userAdmin.remove("second-test-user")
 
   try {
-    await User.get("second-test-user")
+    await userAdmin.get("second-test-user")
     expect(true).toBe(false)
   } catch (e) {
     expect(e).toBeInstanceOf(UserInvalidError)

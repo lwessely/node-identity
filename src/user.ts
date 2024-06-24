@@ -1,11 +1,156 @@
 import knex from "knex"
 import bcrypt from "bcrypt"
 import { Session, SessionInvalidError } from "./session"
+import { Schema } from "./schema"
 
 export class UserProgramError extends Error {}
 export class UserExistsError extends Error {}
 export class UserInvalidError extends Error {}
 export class UserAuthenticationError extends Error {}
+
+export class UserAdmin {
+  public schema: Schema
+
+  constructor(public db: knex.Knex | knex.Knex.Transaction) {
+    this.schema = new Schema(db, "user_schema", [
+      {
+        up: async (db) => {
+          await db.schema.createTable("user_accounts", (table) => {
+            table.increments("id")
+            table.string("username").notNullable().unique()
+            table.string("password")
+            table
+              .datetime("created")
+              .notNullable()
+              .defaultTo(db.fn.now())
+            table.index("username", "user_accounts_username_index")
+          })
+        },
+        down: async (db) => {
+          await db.schema.dropTableIfExists("user_accounts")
+        },
+      },
+      {
+        up: async (db) => {
+          await db.schema.createTable("user_data", (table) => {
+            table.increments("id")
+            table
+              .integer("user_id")
+              .unsigned()
+              .notNullable()
+              .references("id")
+              .inTable("user_accounts")
+              .onDelete("CASCADE")
+            table.string("key").notNullable()
+            table.string("value").notNullable()
+            table
+              .string("type", 7)
+              .notNullable()
+              .checkIn(["string", "number", "boolean"])
+          })
+        },
+        down: async (db) => {
+          await db.schema.dropTableIfExists("user_data")
+        },
+      },
+    ])
+  }
+
+  async exists(username: string): Promise<boolean> {
+    const userIdResult = await this.db
+      .select("id")
+      .from("user_accounts")
+      .where({ username })
+    return userIdResult.length > 0
+  }
+
+  async create(username: string): Promise<User> {
+    if (await this.exists(username)) {
+      throw new UserExistsError(
+        `Failed to create user '${username}': A user with that name already exists.`
+      )
+    }
+
+    await this.db
+      .insert({ username, password: null })
+      .into("user_accounts")
+
+    return await this.get(username)
+  }
+
+  async get(username: string): Promise<User> {
+    const userResult = await this.db
+      .select("id")
+      .from("user_accounts")
+      .where({ username })
+
+    if (userResult.length === 0) {
+      throw new UserInvalidError(
+        `Failed to get user '${username}': No such user.`
+      )
+    }
+
+    const { id } = userResult[0]
+    const groupResult = await this.db
+      .select("group_names.name")
+      .from("group_members")
+      .leftJoin(
+        "group_names",
+        "group_members.group_id",
+        "group_names.id"
+      )
+      .where({ user_id: id as number })
+    const groups = groupResult.map((row) => row.name)
+
+    return new User(this.db, id as number, username, false, groups)
+  }
+
+  async fromSession(session: Session) {
+    const userId = session.getUserId()
+
+    if (userId === null) {
+      throw new UserAuthenticationError(
+        "Failed to get user from session: There is no user" +
+          " authenticated with the session provided."
+      )
+    }
+
+    const userResult = await this.db
+      .select("username")
+      .from("user_accounts")
+      .where({ id: userId })
+
+    if (userResult.length === 0) {
+      throw new UserInvalidError(
+        `Failed to get user with id '${userId}' from session: No such user.`
+      )
+    }
+
+    const groupResult = await this.db
+      .select("group_names.name")
+      .from("group_members")
+      .leftJoin(
+        "group_names",
+        "group_members.group_id",
+        "group_names.id"
+      )
+      .where({ user_id: userId })
+    const groups = groupResult.map((row) => row.name)
+
+    const { username } = userResult[0]
+    return new User(this.db, userId, username, true, groups)
+  }
+
+  async remove(username: string): Promise<void> {
+    if (!(await this.exists(username))) {
+      throw new UserInvalidError(
+        `Failed to remove user '${username}': No such user.`
+      )
+    }
+
+    await this.db.del().from("user_accounts").where({ username })
+  }
+}
 
 export class User {
   static db: knex.Knex | null = null
@@ -18,176 +163,6 @@ export class User {
     private groups: string[]
   ) {}
 
-  private static async ensureDatabaseSchema(): Promise<void> {
-    const db = this.db as knex.Knex
-    let dbInitialized = await db.schema.hasTable("user_schema")
-
-    if (!dbInitialized) {
-      await db.schema.createTable("user_schema", (table) => {
-        table.increments("schema_version")
-      })
-    }
-
-    const schemaVersionResult = await db("user_schema")
-      .select("schema_version")
-      .orderBy("schema_version", "desc")
-      .limit(1)
-    let schemaVersion = schemaVersionResult[0]?.schema_version ?? 0
-
-    if (schemaVersion < 1) {
-      await db.schema.createTable("user_accounts", (table) => {
-        table.increments("id")
-        table.string("username").notNullable().unique()
-        table.string("password")
-        table.index("username", "user_accounts_username_index")
-      })
-      await db.insert({}).into("user_schema")
-    }
-
-    if (schemaVersion < 2) {
-      await db.schema.createTable("user_data", (table) => {
-        table.increments("id")
-        table
-          .integer("user_id")
-          .unsigned()
-          .notNullable()
-          .references("id")
-          .inTable("user_accounts")
-          .onDelete("CASCADE")
-        table.string("key").notNullable()
-        table.string("value").notNullable()
-        table
-          .string("type", 7)
-          .notNullable()
-          .checkIn(["string", "number", "boolean"])
-      })
-      await db.insert({}).into("user_schema")
-    }
-  }
-
-  private static ensureDatabaseConnection(): knex.Knex {
-    if (this.db === null) {
-      throw new UserProgramError(
-        "Operation failed: You need to provide a database object to 'User.connect()' first."
-      )
-    }
-
-    return this.db
-  }
-
-  static async connect(knex: knex.Knex): Promise<void> {
-    this.db = knex
-    await this.ensureDatabaseSchema()
-  }
-
-  static async exists(username: string): Promise<boolean> {
-    const db = this.ensureDatabaseConnection()
-    const userIdResult = await db
-      .select("id")
-      .from("user_accounts")
-      .where({ username })
-    return userIdResult.length > 0
-  }
-
-  static async create(username: string): Promise<User> {
-    const db = this.ensureDatabaseConnection()
-
-    if (await this.exists(username)) {
-      throw new UserExistsError(
-        `Failed to create user '${username}': A user with that name already exists.`
-      )
-    }
-
-    await db
-      .insert({ username, password: null })
-      .into("user_accounts")
-
-    return await User.get(username)
-  }
-
-  static async get(username: string): Promise<User> {
-    const db = this.ensureDatabaseConnection()
-    const userResult = await db
-      .select("id")
-      .from("user_accounts")
-      .where({ username })
-
-    if (userResult.length === 0) {
-      throw new UserInvalidError(
-        `Failed to get user '${username}': No such user.`
-      )
-    }
-
-    const { id } = userResult[0]
-    const groupResult = await db
-      .select("group_names.name")
-      .from("group_members")
-      .leftJoin(
-        "group_names",
-        "group_members.group_id",
-        "group_names.id"
-      )
-      .where({ user_id: id as number })
-    const groups = groupResult.map((row) => row.name)
-
-    return new User(db, id as number, username, false, groups)
-  }
-
-  static async fromSession(session: Session) {
-    const db = this.ensureDatabaseConnection()
-    const userId = session.getUserId()
-
-    if (userId === null) {
-      throw new UserAuthenticationError(
-        "Failed to get user from session: There is no user" +
-          " authenticated with the session provided."
-      )
-    }
-
-    const userResult = await db
-      .select("username")
-      .from("user_accounts")
-      .where({ id: userId })
-
-    if (userResult.length === 0) {
-      throw new UserInvalidError(
-        `Failed to get user with id '${userId}' from session: No such user.`
-      )
-    }
-
-    const groupResult = await db
-      .select("group_names.name")
-      .from("group_members")
-      .leftJoin(
-        "group_names",
-        "group_members.group_id",
-        "group_names.id"
-      )
-      .where({ user_id: userId })
-    const groups = groupResult.map((row) => row.name)
-
-    const { username } = userResult[0]
-    return new User(db, userId, username, true, groups)
-  }
-
-  static async remove(username: string): Promise<void> {
-    if (!(await this.exists(username))) {
-      throw new UserInvalidError(
-        `Failed to remove user '${username}': No such user.`
-      )
-    }
-
-    const db = this.ensureDatabaseConnection()
-    await db.del().from("user_accounts").where({ username })
-  }
-
-  async setPassword(password: string): Promise<void> {
-    const hash = await bcrypt.hash(password, 10)
-    await this.db("user_accounts")
-      .update({ password: hash })
-      .where({ id: this.id })
-  }
-
   getId(): number {
     return this.id
   }
@@ -198,6 +173,13 @@ export class User {
 
   listGroups(): string[] {
     return this.groups
+  }
+
+  async setPassword(password: string): Promise<void> {
+    const hash = await bcrypt.hash(password, 10)
+    await this.db("user_accounts")
+      .update({ password: hash })
+      .where({ id: this.id })
   }
 
   async verifyPassword(password: string): Promise<boolean> {
@@ -266,21 +248,31 @@ export class User {
   }
 
   async setItems(data: { [key: string]: string | number | boolean }) {
-    await this.db.transaction(async (trx) => {
+    const updateItems = async (
+      db: knex.Knex | knex.Knex.Transaction
+    ) => {
       for (const [key, value] of Object.entries(data)) {
         let type = typeof value
-        await trx
+        await db
           .del()
           .from("user_data")
           .where({ user_id: this.id, key })
-        await trx("user_data").insert({
+        await db("user_data").insert({
           user_id: this.id,
           key,
           value: `${value}`,
           type,
         })
       }
-    })
+    }
+
+    if (this.db.isTransaction) {
+      await updateItems(this.db)
+    } else {
+      await this.db.transaction(async (trx) => {
+        await updateItems(trx)
+      })
+    }
   }
 
   async removeItems(keys: string[]) {

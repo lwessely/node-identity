@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "@jest/globals"
 import {
-  Session,
+  SessionAdmin,
   SessionExpiredError,
   SessionInvalidError,
 } from "../src/session"
 import {
-  User,
+  UserAdmin,
   UserAuthenticationError,
   UserInvalidError,
 } from "../src/user"
@@ -17,15 +17,20 @@ import {
   requireCondition,
   requireAllGroups,
 } from "../src/routes"
-import { Group } from "../src/group"
+import { Group, GroupAdmin } from "../src/group"
 import express, { NextFunction, Request, Response } from "express"
 import { Server } from "http"
 import knex from "knex"
 import bodyParser from "body-parser"
+import { Identity } from "../src"
 
 let app: express.Express
 let server: Server
 let db: knex.Knex
+let identity: Identity
+let userAdmin: UserAdmin
+let groupAdmin: GroupAdmin
+let sessionAdmin: SessionAdmin
 
 beforeAll(async () => {
   db = knex({
@@ -39,21 +44,29 @@ beforeAll(async () => {
     },
   })
 
-  await User.connect(db)
-  await Session.connect(db)
-  await Group.connect(db)
-  const user = await User.create("route-test-user")
+  identity = new Identity(db)
+
+  userAdmin = identity.user
+  await userAdmin.schema.build()
+
+  groupAdmin = identity.group
+  await groupAdmin.schema.build()
+
+  sessionAdmin = identity.session
+  await sessionAdmin.schema.build()
+
+  const user = await userAdmin.create("route-test-user")
   await user.setPassword("test-password")
 
   app = express()
 
   app.use(bodyParser.json())
 
-  app.use("/session-required", requireSession())
+  app.use("/session-required", requireSession(identity))
 
   app.use(
     "/session-required-custom-response",
-    requireSession({
+    requireSession(identity, {
       responseCode: 418,
       headers: {
         "Content-type": "text/plain; charset=utf-8",
@@ -64,7 +77,7 @@ beforeAll(async () => {
 
   app.use(
     "/session-required-custom-callback",
-    requireSession({
+    requireSession(identity, {
       responseCallback: (
         req: Request,
         res: Response,
@@ -83,11 +96,11 @@ beforeAll(async () => {
     })
   )
 
-  app.use("/login-required", requireLogin())
+  app.use("/login-required", requireLogin(identity))
 
   app.use(
     "/login-required-custom-response",
-    requireLogin({
+    requireLogin(identity, {
       responseCode: 418,
       headers: {
         "Content-type": "text/plain; charset=utf-8",
@@ -98,7 +111,7 @@ beforeAll(async () => {
 
   app.use(
     "/login-required-custom-callback",
-    requireLogin({
+    requireLogin(identity, {
       responseCallback: (
         req: Request,
         res: Response,
@@ -193,7 +206,7 @@ beforeAll(async () => {
 
   app.use(
     "/session-required-extend-lifetime",
-    requireSession({
+    requireSession(identity, {
       update: { lifetime: { years: 1 }, renewalPeriod: { years: 3 } },
     })
   )
@@ -207,7 +220,7 @@ beforeAll(async () => {
 
   app.use(
     "/login-required-extend-lifetime",
-    requireLogin({
+    requireLogin(identity, {
       update: { lifetime: { years: 1 }, renewalPeriod: { years: 3 } },
     })
   )
@@ -221,7 +234,7 @@ beforeAll(async () => {
 
   app.use(
     "/session-required-throw",
-    requireSession({
+    requireSession(identity, {
       responseCallback: (
         req: Request,
         res: Response,
@@ -236,7 +249,7 @@ beforeAll(async () => {
 
   app.use(
     "/session-required-throw-async",
-    requireSession({
+    requireSession(identity, {
       responseCallback: async (
         req: Request,
         res: Response,
@@ -257,7 +270,7 @@ beforeAll(async () => {
 
   app.use(
     "/login-required-throw",
-    requireLogin({
+    requireLogin(identity, {
       responseCallback: (
         req: Request,
         res: Response,
@@ -272,7 +285,7 @@ beforeAll(async () => {
 
   app.use(
     "/login-required-throw-async",
-    requireLogin({
+    requireLogin(identity, {
       responseCallback: async (
         req: Request,
         res: Response,
@@ -293,7 +306,7 @@ beforeAll(async () => {
 
   app.use(
     "/require-any-group",
-    requireAnyGroup(["required-1", "required-2"], {
+    requireAnyGroup(identity, ["required-1", "required-2"], {
       responseCallback: (
         req: Request,
         res: Response,
@@ -322,7 +335,7 @@ beforeAll(async () => {
 
   app.use(
     "/require-all-groups",
-    requireAllGroups(["required-1", "required-2"], {
+    requireAllGroups(identity, ["required-1", "required-2"], {
       responseCallback: (
         req: Request,
         res: Response,
@@ -351,7 +364,7 @@ beforeAll(async () => {
 
   app.use(
     "/require-condition",
-    requireCondition((req: Request, res: Response) => {
+    requireCondition(identity, (req: Request, res: Response) => {
       const data = req.body
 
       if (data?.throw) {
@@ -377,8 +390,11 @@ beforeAll(async () => {
 
   app.use(
     "/require-any-group-extend-lifetime",
-    requireAnyGroup(["required-1", "required-2"], {
-      update: { lifetime: { years: 1 }, renewalPeriod: { years: 3 } },
+    requireAnyGroup(identity, ["required-1", "required-2"], {
+      update: {
+        lifetime: { years: 1 },
+        renewalPeriod: { years: 3 },
+      },
     })
   )
 
@@ -391,8 +407,11 @@ beforeAll(async () => {
 
   app.use(
     "/require-all-groups-extend-lifetime",
-    requireAllGroups(["required-1", "required-2"], {
-      update: { lifetime: { years: 1 }, renewalPeriod: { years: 3 } },
+    requireAllGroups(identity, ["required-1", "required-2"], {
+      update: {
+        lifetime: { years: 1 },
+        renewalPeriod: { years: 3 },
+      },
     })
   )
 
@@ -406,6 +425,7 @@ beforeAll(async () => {
   app.use(
     "/require-condition-extend-lifetime",
     requireCondition(
+      identity,
       (req: Request, res: Response) => {
         throw new UserAuthenticationError(
           "This error is intended to be thrown."
@@ -427,13 +447,19 @@ beforeAll(async () => {
     }
   )
 
-  app.use("/require-all", requireSession())
-  app.use("/require-all", requireLogin())
-  app.use("/require-all", requireAnyGroup(["required-group-1"]))
-  app.use("/require-all", requireAllGroups(["required-group-1"]))
+  app.use("/require-all", requireSession(identity))
+  app.use("/require-all", requireLogin(identity))
   app.use(
     "/require-all",
-    requireCondition(() => {})
+    requireAnyGroup(identity, ["required-group-1"])
+  )
+  app.use(
+    "/require-all",
+    requireAllGroups(identity, ["required-group-1"])
+  )
+  app.use(
+    "/require-all",
+    requireCondition(identity, () => {})
   )
 
   app.all("/require-all", (req: Request, res: Response) => {
@@ -443,18 +469,18 @@ beforeAll(async () => {
 
   app.use(
     "/require-all-reverse",
-    requireCondition(() => {})
+    requireCondition(identity, () => {})
   )
   app.use(
     "/require-all-reverse",
-    requireAllGroups(["required-group-1"])
+    requireAllGroups(identity, ["required-group-1"])
   )
   app.use(
     "/require-all-reverse",
-    requireAnyGroup(["required-group-1"])
+    requireAnyGroup(identity, ["required-group-1"])
   )
-  app.use("/require-all-reverse", requireLogin())
-  app.use("/require-all-reverse", requireSession())
+  app.use("/require-all-reverse", requireLogin(identity))
+  app.use("/require-all-reverse", requireSession(identity))
 
   app.all("/require-all-reverse", (req: Request, res: Response) => {
     const { user, session } = req as RequestWithIdentity
@@ -476,7 +502,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  await User.remove("route-test-user")
+  await userAdmin.remove("route-test-user")
   await db.destroy()
   server.close()
 })
@@ -509,7 +535,7 @@ test("Gets 401 from session route", async () => {
     expect(data.error).toBe(401)
   }
   {
-    const session = await Session.create({ seconds: -1 })
+    const session = await sessionAdmin.create({ seconds: -1 })
     const response = await fetch(
       "http://127.0.0.1:3000/session-required",
       {
@@ -548,7 +574,7 @@ test("Gets 418 from session route with custom options", async () => {
     expect(data).toBe("Bad session!")
   }
   {
-    const session = await Session.create({ seconds: -1 })
+    const session = await sessionAdmin.create({ seconds: -1 })
     const response = await fetch(
       "http://127.0.0.1:3000/session-required-custom-response",
       {
@@ -584,7 +610,7 @@ test("Gets 418 from session route with custom callback", async () => {
     expect(data.error).toBe("session invalid")
   }
   {
-    const session = await Session.create({ seconds: -1 })
+    const session = await sessionAdmin.create({ seconds: -1 })
     const response = await fetch(
       "http://127.0.0.1:3000/session-required-custom-callback",
       {
@@ -599,7 +625,7 @@ test("Gets 418 from session route with custom callback", async () => {
 })
 
 test("Gets 200 from session route", async () => {
-  const session = await Session.create()
+  const session = await sessionAdmin.create()
   {
     const response = await fetch(
       "http://127.0.0.1:3000/session-required",
@@ -646,7 +672,7 @@ test("Gets 200 from session route", async () => {
     expect(data.user).toBe(undefined)
   }
   {
-    const user = await User.get("route-test-user")
+    const user = await userAdmin.get("route-test-user")
     await user.login(session, "test-password")
     const response = await fetch(
       "http://127.0.0.1:3000/session-required",
@@ -663,7 +689,7 @@ test("Gets 200 from session route", async () => {
     expect(data.user).toBe(undefined)
   }
   {
-    const user = await User.get("route-test-user")
+    const user = await userAdmin.get("route-test-user")
     await user.login(session, "test-password")
     const response = await fetch(
       "http://127.0.0.1:3000/session-required-custom-response",
@@ -680,7 +706,7 @@ test("Gets 200 from session route", async () => {
     expect(data.user).toBe(undefined)
   }
   {
-    const user = await User.get("route-test-user")
+    const user = await userAdmin.get("route-test-user")
     await user.login(session, "test-password")
     const response = await fetch(
       "http://127.0.0.1:3000/session-required-custom-callback",
@@ -700,7 +726,7 @@ test("Gets 200 from session route", async () => {
 })
 
 test("Gets 403 from user route", async () => {
-  const session = await Session.create()
+  const session = await sessionAdmin.create()
   {
     const response = await fetch(
       "http://127.0.0.1:3000/login-required"
@@ -732,8 +758,8 @@ test("Gets 403 from user route", async () => {
     expect(data.error).toBe(403)
   }
   {
-    const user = await User.get("route-test-user")
-    const expiredSession = await Session.create({ seconds: -1 })
+    const user = await userAdmin.get("route-test-user")
+    const expiredSession = await sessionAdmin.create({ seconds: -1 })
     user.login(expiredSession, "test-password")
     const response = await fetch(
       "http://127.0.0.1:3000/login-required",
@@ -752,7 +778,7 @@ test("Gets 403 from user route", async () => {
 })
 
 test("Gets 403 from user route with custom response", async () => {
-  const session = await Session.create()
+  const session = await sessionAdmin.create()
   {
     const response = await fetch(
       "http://127.0.0.1:3000/login-required-custom-response"
@@ -793,8 +819,8 @@ test("Gets 403 from user route with custom response", async () => {
     expect(data).toBe("Bad user!")
   }
   {
-    const user = await User.get("route-test-user")
-    const expiredSession = await Session.create({ seconds: -1 })
+    const user = await userAdmin.get("route-test-user")
+    const expiredSession = await sessionAdmin.create({ seconds: -1 })
     user.login(expiredSession, "test-password")
     const response = await fetch(
       "http://127.0.0.1:3000/login-required-custom-response",
@@ -816,7 +842,7 @@ test("Gets 403 from user route with custom response", async () => {
 })
 
 test("Gets 403 from user route with custom callback", async () => {
-  const session = await Session.create()
+  const session = await sessionAdmin.create()
   {
     const response = await fetch(
       "http://127.0.0.1:3000/login-required-custom-callback"
@@ -848,8 +874,8 @@ test("Gets 403 from user route with custom callback", async () => {
     expect(data.error).toBe("user authentication error")
   }
   {
-    const user = await User.get("route-test-user")
-    const expiredSession = await Session.create({ seconds: -1 })
+    const user = await userAdmin.get("route-test-user")
+    const expiredSession = await sessionAdmin.create({ seconds: -1 })
     user.login(expiredSession, "test-password")
     const response = await fetch(
       "http://127.0.0.1:3000/login-required-custom-callback",
@@ -868,8 +894,8 @@ test("Gets 403 from user route with custom callback", async () => {
 })
 
 test("Gets 200 from user route", async () => {
-  const session = await Session.create()
-  const user = await User.get("route-test-user")
+  const session = await sessionAdmin.create()
+  const user = await userAdmin.get("route-test-user")
   await user.login(session, "test-password")
   const response = await fetch(
     "http://127.0.0.1:3000/login-required",
@@ -890,7 +916,10 @@ test("Gets 200 from user route", async () => {
 })
 
 test("Extends valid session for session route", async () => {
-  const session = await Session.create({ hours: 1 }, { hours: 3 })
+  const session = await sessionAdmin.create(
+    { hours: 1 },
+    { hours: 3 }
+  )
 
   {
     const expectedExpirationDate = new Date(
@@ -930,7 +959,7 @@ test("Extends valid session for session route", async () => {
       expectedExpirationDate.getTime() + 3 * 365 * 24 * 60 * 60 * 1000
     )
     expect(response.status).toBe(200)
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
     const expirationDate = sessionCopy.getExpirationDate()
     expect(
       expectedExpirationDate.getTime() -
@@ -955,7 +984,10 @@ test("Extends valid session for session route", async () => {
 })
 
 test("Extends valid session for user route", async () => {
-  const session = await Session.create({ hours: 1 }, { hours: 3 })
+  const session = await sessionAdmin.create(
+    { hours: 1 },
+    { hours: 3 }
+  )
 
   {
     const expectedExpirationDate = new Date(
@@ -995,7 +1027,7 @@ test("Extends valid session for user route", async () => {
       expectedExpirationDate.getTime() + 3 * 365 * 24 * 60 * 60 * 1000
     )
     expect(response.status).toBe(403)
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
     const expirationDate = sessionCopy.getExpirationDate()
     expect(
       expectedExpirationDate.getTime() -
@@ -1017,7 +1049,7 @@ test("Extends valid session for user route", async () => {
   }
 
   await session.updateLifetime({ hours: 1 }, { hours: 3 })
-  const user = await User.get("route-test-user")
+  const user = await userAdmin.get("route-test-user")
   await user.login(session, "test-password")
 
   {
@@ -1058,7 +1090,7 @@ test("Extends valid session for user route", async () => {
       expectedExpirationDate.getTime() + 3 * 365 * 24 * 60 * 60 * 1000
     )
     expect(response.status).toBe(200)
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
     const expirationDate = sessionCopy.getExpirationDate()
     expect(
       expectedExpirationDate.getTime() -
@@ -1090,15 +1122,15 @@ test("Gets 418 from route requiring any group", async () => {
     expect(response.status).toBe(418)
   }
   {
-    const user = await User.get("route-test-user")
+    const user = await userAdmin.get("route-test-user")
     await user.setPassword("123")
-    const group1 = await Group.create("not-required-1")
-    const group2 = await Group.create("not-required-2")
+    const group1 = await groupAdmin.create("not-required-1")
+    const group2 = await groupAdmin.create("not-required-2")
 
     await group1.addMember(user)
     await group2.addMember(user)
 
-    const session = await Session.create()
+    const session = await sessionAdmin.create()
     await user.login(session, "123")
 
     const response = await fetch(
@@ -1107,7 +1139,7 @@ test("Gets 418 from route requiring any group", async () => {
     )
     expect(response.status).toBe(418)
 
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
     expect(
       (sessionCopy.getExpirationDate()?.getTime() as number) / 1000
     ).toBe(
@@ -1116,22 +1148,22 @@ test("Gets 418 from route requiring any group", async () => {
       )
     )
 
-    await Group.remove("not-required-1")
-    await Group.remove("not-required-2")
+    await groupAdmin.remove("not-required-1")
+    await groupAdmin.remove("not-required-2")
     await session.destroy()
   }
 })
 
 test("Gets 200 from route requiring any group", async () => {
-  const user = await User.get("route-test-user")
+  const user = await userAdmin.get("route-test-user")
   await user.setPassword("123")
-  const group1 = await Group.create("required-2")
-  const group2 = await Group.create("not-required-1")
+  const group1 = await groupAdmin.create("required-2")
+  const group2 = await groupAdmin.create("not-required-1")
 
   await group1.addMember(user)
   await group2.addMember(user)
 
-  const session = await Session.create()
+  const session = await sessionAdmin.create()
   await user.login(session, "123")
 
   {
@@ -1145,7 +1177,7 @@ test("Gets 200 from route requiring any group", async () => {
     expect(data.session.id).toBe(session.getId())
     expect(data.user.id).toBe(user.getId())
 
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
     expect(
       (sessionCopy.getExpirationDate()?.getTime() as number) / 1000
     ).toBe(
@@ -1155,7 +1187,7 @@ test("Gets 200 from route requiring any group", async () => {
     )
   }
 
-  const group3 = await Group.create("required-1")
+  const group3 = await groupAdmin.create("required-1")
   group3.addMember(user)
 
   {
@@ -1169,7 +1201,7 @@ test("Gets 200 from route requiring any group", async () => {
     expect(data.session.id).toBe(session.getId())
     expect(data.user.id).toBe(user.getId())
 
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
     expect(
       (sessionCopy.getExpirationDate()?.getTime() as number) / 1000
     ).toBe(
@@ -1179,9 +1211,9 @@ test("Gets 200 from route requiring any group", async () => {
     )
   }
 
-  await Group.remove("required-1")
-  await Group.remove("required-2")
-  await Group.remove("not-required-1")
+  await groupAdmin.remove("required-1")
+  await groupAdmin.remove("required-2")
+  await groupAdmin.remove("not-required-1")
   await session.destroy()
 })
 
@@ -1193,15 +1225,15 @@ test("Gets 418 from route requiring all groups", async () => {
     expect(response.status).toBe(418)
   }
   {
-    const user = await User.get("route-test-user")
+    const user = await userAdmin.get("route-test-user")
     await user.setPassword("123")
-    const group1 = await Group.create("required-1")
-    const group2 = await Group.create("not-required-2")
+    const group1 = await groupAdmin.create("required-1")
+    const group2 = await groupAdmin.create("not-required-2")
 
     await group1.addMember(user)
     await group2.addMember(user)
 
-    const session = await Session.create()
+    const session = await sessionAdmin.create()
     await user.login(session, "123")
 
     const response = await fetch(
@@ -1210,7 +1242,7 @@ test("Gets 418 from route requiring all groups", async () => {
     )
     expect(response.status).toBe(418)
 
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
     expect(
       (sessionCopy.getExpirationDate()?.getTime() as number) / 1000
     ).toBe(
@@ -1219,25 +1251,25 @@ test("Gets 418 from route requiring all groups", async () => {
       )
     )
 
-    await Group.remove("required-1")
-    await Group.remove("not-required-2")
+    await groupAdmin.remove("required-1")
+    await groupAdmin.remove("not-required-2")
     await session.destroy()
   }
 })
 
 test("Gets 200 from route requiring all groups", async () => {
   {
-    const user = await User.get("route-test-user")
+    const user = await userAdmin.get("route-test-user")
     await user.setPassword("123")
-    const group1 = await Group.create("required-1")
-    const group2 = await Group.create("not-required-2")
-    const group3 = await Group.create("required-2")
+    const group1 = await groupAdmin.create("required-1")
+    const group2 = await groupAdmin.create("not-required-2")
+    const group3 = await groupAdmin.create("required-2")
 
     await group1.addMember(user)
     await group2.addMember(user)
     await group3.addMember(user)
 
-    const session = await Session.create()
+    const session = await sessionAdmin.create()
     await user.login(session, "123")
 
     const response = await fetch(
@@ -1250,7 +1282,7 @@ test("Gets 200 from route requiring all groups", async () => {
     expect(data.session.id).toBe(session.getId())
     expect(data.user.id).toBe(user.getId())
 
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
     expect(
       (sessionCopy.getExpirationDate()?.getTime() as number) / 1000
     ).toBe(
@@ -1259,24 +1291,24 @@ test("Gets 200 from route requiring all groups", async () => {
       )
     )
 
-    await Group.remove("required-1")
-    await Group.remove("not-required-2")
-    await Group.remove("required-2")
+    await groupAdmin.remove("required-1")
+    await groupAdmin.remove("not-required-2")
+    await groupAdmin.remove("required-2")
     await session.destroy()
   }
 })
 
 test("Gets 403 from route requiring condition", async () => {
   {
-    const user = await User.get("route-test-user")
+    const user = await userAdmin.get("route-test-user")
     await user.setPassword("123")
-    const group1 = await Group.create("required-1")
-    const group2 = await Group.create("not-required-2")
+    const group1 = await groupAdmin.create("required-1")
+    const group2 = await groupAdmin.create("not-required-2")
 
     await group1.addMember(user)
     await group2.addMember(user)
 
-    const session = await Session.create()
+    const session = await sessionAdmin.create()
     await user.login(session, "123")
 
     const response = await fetch(
@@ -1292,7 +1324,7 @@ test("Gets 403 from route requiring condition", async () => {
     )
     expect(response.status).toBe(403)
 
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
     expect(
       (sessionCopy.getExpirationDate()?.getTime() as number) / 1000
     ).toBe(
@@ -1301,23 +1333,23 @@ test("Gets 403 from route requiring condition", async () => {
       )
     )
 
-    await Group.remove("required-1")
-    await Group.remove("not-required-2")
+    await groupAdmin.remove("required-1")
+    await groupAdmin.remove("not-required-2")
     await session.destroy()
   }
 })
 
 test("Gets 200 from route requiring condition", async () => {
   {
-    const user = await User.get("route-test-user")
+    const user = await userAdmin.get("route-test-user")
     await user.setPassword("123")
-    const group1 = await Group.create("required-1")
-    const group2 = await Group.create("not-required-2")
+    const group1 = await groupAdmin.create("required-1")
+    const group2 = await groupAdmin.create("not-required-2")
 
     await group1.addMember(user)
     await group2.addMember(user)
 
-    const session = await Session.create()
+    const session = await sessionAdmin.create()
     await user.login(session, "123")
 
     const response = await fetch(
@@ -1333,7 +1365,7 @@ test("Gets 200 from route requiring condition", async () => {
     )
     expect(response.status).toBe(200)
 
-    const sessionCopy = await Session.open(session.getToken())
+    const sessionCopy = await sessionAdmin.open(session.getToken())
     expect(
       (sessionCopy.getExpirationDate()?.getTime() as number) / 1000
     ).toBe(
@@ -1346,14 +1378,17 @@ test("Gets 200 from route requiring condition", async () => {
     expect(data.session.id).toBe(session.getId())
     expect(data.user.id).toBe(user.getId())
 
-    await Group.remove("required-1")
-    await Group.remove("not-required-2")
+    await groupAdmin.remove("required-1")
+    await groupAdmin.remove("not-required-2")
     await session.destroy()
   }
 })
 
 test("Route requiring any group correctly extends session", async () => {
-  const session = await Session.create({ hours: 1 }, { hours: 3 })
+  const session = await sessionAdmin.create(
+    { hours: 1 },
+    { hours: 3 }
+  )
   const expectedExpirationDate = new Date(
     new Date().getTime() + 60 * 60 * 1000
   )
@@ -1393,7 +1428,7 @@ test("Route requiring any group correctly extends session", async () => {
 
   expect(response.status).toBe(403)
 
-  const sessionCopy = await Session.open(session.getToken())
+  const sessionCopy = await sessionAdmin.open(session.getToken())
   const newExpirationDate = sessionCopy.getExpirationDate() as Date
   const newRenewableUntilDate =
     sessionCopy.getRenewableUntilDate() as Date
@@ -1417,7 +1452,10 @@ test("Route requiring any group correctly extends session", async () => {
 })
 
 test("Route requiring all groups correctly extends session", async () => {
-  const session = await Session.create({ hours: 1 }, { hours: 3 })
+  const session = await sessionAdmin.create(
+    { hours: 1 },
+    { hours: 3 }
+  )
   const expectedExpirationDate = new Date(
     new Date().getTime() + 60 * 60 * 1000
   )
@@ -1457,7 +1495,7 @@ test("Route requiring all groups correctly extends session", async () => {
 
   expect(response.status).toBe(403)
 
-  const sessionCopy = await Session.open(session.getToken())
+  const sessionCopy = await sessionAdmin.open(session.getToken())
   const newExpirationDate = sessionCopy.getExpirationDate() as Date
   const newRenewableUntilDate =
     sessionCopy.getRenewableUntilDate() as Date
@@ -1481,7 +1519,10 @@ test("Route requiring all groups correctly extends session", async () => {
 })
 
 test("Route requiring condition correctly extends session", async () => {
-  const session = await Session.create({ hours: 1 }, { hours: 3 })
+  const session = await sessionAdmin.create(
+    { hours: 1 },
+    { hours: 3 }
+  )
   const expectedExpirationDate = new Date(
     new Date().getTime() + 60 * 60 * 1000
   )
@@ -1521,7 +1562,7 @@ test("Route requiring condition correctly extends session", async () => {
 
   expect(response.status).toBe(403)
 
-  const sessionCopy = await Session.open(session.getToken())
+  const sessionCopy = await sessionAdmin.open(session.getToken())
   const newExpirationDate = sessionCopy.getExpirationDate() as Date
   const newRenewableUntilDate =
     sessionCopy.getRenewableUntilDate() as Date
@@ -1545,11 +1586,11 @@ test("Route requiring condition correctly extends session", async () => {
 })
 
 test("Nested middleware does not cause issues", async () => {
-  const user = await User.create("nested-routes-test-user")
+  const user = await userAdmin.create("nested-routes-test-user")
   await user.setPassword("123")
-  const session = await Session.create()
+  const session = await sessionAdmin.create()
   await user.login(session, "123")
-  const group = await Group.create("required-group-1")
+  const group = await groupAdmin.create("required-group-1")
   await group.addMember(user)
 
   {
@@ -1575,8 +1616,8 @@ test("Nested middleware does not cause issues", async () => {
     expect(data.session.id).toBe(session.getId())
   }
 
-  await User.remove("nested-routes-test-user")
-  await Group.remove("required-group-1")
+  await userAdmin.remove("nested-routes-test-user")
+  await groupAdmin.remove("required-group-1")
   await session.destroy()
 })
 

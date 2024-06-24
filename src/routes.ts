@@ -16,6 +16,7 @@ import {
   UserInvalidError,
 } from "./user"
 import { GroupNotAMemberError } from "./group"
+import { Identity } from "./identity"
 
 export interface RequireGuardOptions {
   responseCode?: number
@@ -43,7 +44,8 @@ export type AccessCheckCallback = (
 ) => Promise<void> | void
 
 export async function getSessionFromRequest(
-  req: Request
+  req: Request,
+  identity: Identity
 ): Promise<Session> {
   const openSession = (req as RequestWithIdentity).session
   if (openSession instanceof Session) {
@@ -63,11 +65,12 @@ export async function getSessionFromRequest(
     throw new SessionInvalidError("Missing session token.")
   }
 
-  return await Session.open(authToken)
+  return await identity.session.open(authToken)
 }
 
 export async function getUserFromRequest(
   req: Request,
+  identity: Identity,
   cachedSession?: Session
 ): Promise<User> {
   const activeUser = (req as RequestWithIdentity).user
@@ -75,8 +78,9 @@ export async function getUserFromRequest(
     return activeUser
   }
 
-  const session = cachedSession ?? (await getSessionFromRequest(req))
-  return await User.fromSession(session)
+  const session =
+    cachedSession ?? (await getSessionFromRequest(req, identity))
+  return await identity.user.fromSession(session)
 }
 
 async function sendErrorResponse(
@@ -114,6 +118,7 @@ async function sendErrorResponse(
 }
 
 export function requireSession(
+  identity: Identity,
   options: RequireGuardOptions = {}
 ): RequestHandler {
   const userOptions: RequireGuardOptions = {
@@ -133,7 +138,10 @@ export function requireSession(
     next: NextFunction
   ): Promise<void> => {
     try {
-      const session = await getSessionFromRequest(req).catch((e) => e)
+      const session = await getSessionFromRequest(
+        req,
+        identity
+      ).catch((e) => e)
 
       if (!(session instanceof Session)) {
         await sendErrorResponse(req, res, session, userOptions)
@@ -157,6 +165,7 @@ export function requireSession(
 }
 
 export function requireLogin(
+  identity: Identity,
   options: RequireGuardOptions = {}
 ): RequestHandler {
   const userOptions: RequireGuardOptions = {
@@ -175,7 +184,10 @@ export function requireLogin(
     next: NextFunction
   ): Promise<void> => {
     try {
-      const session = await getSessionFromRequest(req).catch((e) => e)
+      const session = await getSessionFromRequest(
+        req,
+        identity
+      ).catch((e) => e)
 
       if (!(session instanceof Session)) {
         await sendErrorResponse(req, res, session, userOptions)
@@ -189,9 +201,11 @@ export function requireLogin(
         )
       }
 
-      const user = await getUserFromRequest(req, session).catch(
-        (e) => e
-      )
+      const user = await getUserFromRequest(
+        req,
+        identity,
+        session
+      ).catch((e) => e)
 
       if (!(user instanceof User)) {
         await sendErrorResponse(req, res, user, userOptions)
@@ -208,6 +222,7 @@ export function requireLogin(
 }
 
 export function requireAnyGroup(
+  identity: Identity,
   groups: string[],
   options: RequireGuardOptions = {}
 ) {
@@ -227,7 +242,10 @@ export function requireAnyGroup(
     next: NextFunction
   ): Promise<void> => {
     try {
-      const session = await getSessionFromRequest(req).catch((e) => e)
+      const session = await getSessionFromRequest(
+        req,
+        identity
+      ).catch((e) => e)
 
       if (!(session instanceof Session)) {
         await sendErrorResponse(req, res, session, userOptions)
@@ -241,9 +259,11 @@ export function requireAnyGroup(
         )
       }
 
-      const user = await getUserFromRequest(req, session).catch(
-        (e) => e
-      )
+      const user = await getUserFromRequest(
+        req,
+        identity,
+        session
+      ).catch((e) => e)
 
       if (!(user instanceof User)) {
         await sendErrorResponse(req, res, user, userOptions)
@@ -284,6 +304,7 @@ export function requireAnyGroup(
 }
 
 export function requireAllGroups(
+  identity: Identity,
   groups: string[],
   options: RequireGuardOptions = {}
 ) {
@@ -303,7 +324,10 @@ export function requireAllGroups(
     next: NextFunction
   ): Promise<void> => {
     try {
-      const session = await getSessionFromRequest(req).catch((e) => e)
+      const session = await getSessionFromRequest(
+        req,
+        identity
+      ).catch((e) => e)
 
       if (!(session instanceof Session)) {
         await sendErrorResponse(req, res, session, userOptions)
@@ -317,9 +341,11 @@ export function requireAllGroups(
         )
       }
 
-      const user = await getUserFromRequest(req, session).catch(
-        (e) => e
-      )
+      const user = await getUserFromRequest(
+        req,
+        identity,
+        session
+      ).catch((e) => e)
 
       if (!(user instanceof User)) {
         await sendErrorResponse(req, res, user, userOptions)
@@ -355,6 +381,7 @@ export function requireAllGroups(
 }
 
 export function requireCondition(
+  identity: Identity,
   accessCheckCallback: AccessCheckCallback,
   options: RequireGuardOptions = {}
 ) {
@@ -375,7 +402,10 @@ export function requireCondition(
     next: NextFunction
   ): Promise<void> => {
     try {
-      const session = await getSessionFromRequest(req).catch((e) => e)
+      const session = await getSessionFromRequest(
+        req,
+        identity
+      ).catch((e) => e)
 
       if (session instanceof Session) {
         ;(req as RequestWithIdentity).session = session
@@ -387,9 +417,11 @@ export function requireCondition(
         }
       }
 
-      const user = await getUserFromRequest(req, session).catch(
-        (e) => e
-      )
+      const user = await getUserFromRequest(
+        req,
+        identity,
+        session
+      ).catch((e) => e)
 
       if (user instanceof User) {
         ;(req as RequestWithIdentity).user = user

@@ -1,6 +1,6 @@
 {
   "name": "@lwtw/identity",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "A simple library for managing users, user groups, and sessions",
   "keywords": [
     "sessions",

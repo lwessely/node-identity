@@ -1,5 +1,6 @@
 import {
   User,
+  UserAdmin,
   UserAuthenticationError,
   UserExistsError,
   UserInvalidError,
@@ -7,6 +8,7 @@ import {
 } from "./user"
 import {
   Session,
+  SessionAdmin,
   SessionInvalidError,
   SessionProgramError,
   SessionExpiredError,
@@ -26,6 +28,7 @@ import {
   requireCondition,
 } from "./routes"
 import {
+  GroupAdmin,
   Group,
   GroupExistsError,
   GroupHasMemberError,
@@ -33,14 +36,21 @@ import {
   GroupProgramError,
   GroupNotAMemberError,
 } from "./group"
+import {
+  Identity,
+  AtomicOperationCallback,
+  IdentityNestedAtomicOperationError,
+} from "./identity"
 
 export {
   User,
+  UserAdmin,
   UserAuthenticationError,
   UserExistsError,
   UserInvalidError,
   UserProgramError,
   Session,
+  SessionAdmin,
   SessionInvalidError,
   SessionProgramError,
   SessionExpiredError,
@@ -56,10 +66,14 @@ export {
   requireAllGroups,
   requireCondition,
   Group,
+  GroupAdmin,
   GroupExistsError,
   GroupHasMemberError,
   GroupInvalidError,
   GroupProgramError,
   GroupNotAMemberError,
   AccessCheckCallback,
+  Identity,
+  AtomicOperationCallback,
+  IdentityNestedAtomicOperationError,
 }
