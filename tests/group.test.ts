@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "@jest/globals"
 import knex from "knex"
-import { User, UserAdmin } from "../src/user"
+import { UserAdmin } from "../src/user"
 import {
   Group,
   GroupAdmin,
