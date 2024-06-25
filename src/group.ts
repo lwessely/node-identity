@@ -85,7 +85,7 @@ export class GroupAdmin {
 
     if (groupResult.length === 0) {
       throw new GroupInvalidError(
-        `Failed to ge group '${name}': No group with that name exists.`
+        `Failed to get group '${name}': No group with that name exists.`
       )
     }
 
