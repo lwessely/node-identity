@@ -90,9 +90,7 @@ export class UserAdmin {
           )
         },
         down: async (db) => {
-          await db.schema.dropTableIfExists(
-            "user_attributes_search_keys"
-          )
+          await db.schema.dropTableIfExists("user_data_search_keys")
         },
       },
     ])

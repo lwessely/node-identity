@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "@jest/globals"
 import { Schema } from "../src/schema"
 import knex from "knex"
+import { Identity } from "../src"
 
 let db: knex.Knex
 let schema: Schema
+let identity: Identity
 
 beforeAll(async () => {
   db = knex({
@@ -17,6 +19,7 @@ beforeAll(async () => {
     },
   })
 
+  identity = new Identity(db)
   schema = new Schema(db, "test_schema", [
     {
       up: async (db) => {
@@ -51,7 +54,10 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  db.schema.dropTable("test_schema")
+  await db.schema.dropTable("test_schema")
+  await db.schema.dropTable("user_schema")
+  await db.schema.dropTable("group_schema")
+  await db.schema.dropTable("session_schema")
   await db.destroy()
 })
 
@@ -65,6 +71,10 @@ test("Migrates to latest migration", async () => {
   expect(schemaResult[0].migration_number).toBe(2)
   expect(await db.schema.hasTable("test_table_1")).toBe(true)
   expect(await db.schema.hasTable("test_table_2")).toBe(true)
+
+  await identity.user.schema.build()
+  await identity.session.schema.build()
+  await identity.group.schema.build()
 })
 
 test("Reverts all migrations", async () => {
@@ -77,4 +87,8 @@ test("Reverts all migrations", async () => {
   expect(schemaResult[0].migration_number).toBe(0)
   expect(await db.schema.hasTable("test_table_1")).toBe(false)
   expect(await db.schema.hasTable("test_table_2")).toBe(false)
+
+  await identity.session.schema.teardown()
+  await identity.group.schema.teardown()
+  await identity.user.schema.teardown()
 })

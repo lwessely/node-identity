@@ -52,7 +52,7 @@ export class GroupAdmin {
           })
         },
         down: async (db) => {
-          await db.schema.dropTableIfExists("group_names")
+          await db.schema.dropTableIfExists("group_members")
         },
       },
     ])
