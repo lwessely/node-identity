@@ -102,6 +102,18 @@ export class GroupAdmin {
 
     await this.db.del().from("group_names").where({ name })
   }
+
+  async list(offset: number, count: number): Promise<string[]> {
+    const groupResult = await this.db("group_names")
+      .select("name")
+      .orderBy("name", "asc")
+      .offset(offset)
+      .limit(count)
+
+    const groupNames: string[] = groupResult.map((row) => row.name)
+
+    return groupNames
+  }
 }
 
 export class Group {

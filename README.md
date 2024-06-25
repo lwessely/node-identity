@@ -8,6 +8,11 @@
 This package helps you to quickly add user accounts, user groups, and sessions in your APIs/WebApps.
 
 ## Change log
+### v0.4.1
+- Added feature: User names can be listed with paging functionality
+- Added feature: Group names can be listed with paging functionality
+- Added feature: Users can be searched for by their indexed data, with paging functionality
+
 ### v0.4.0
 - Breaking change: Moved all static methods from the Group, Session, and User classes to their new respective *Admin classes
 - Breaking change: New table schema & setup incompatible with previous one
@@ -169,6 +174,28 @@ const { firstName, age } = await user.getItems(["firstName", "age"]) // Get valu
 await user.removeItems(["firstName", "lastName"]) // Remove items 'firstName' and 'lastName'
 ```
 
+### List usernames
+```ts
+const firstTenUsernames = await identity.user.list(0, 10) // get the first 10 usernames in alphabetical order
+const secondTenUsernames = await identity.user.list(10, 10) // get the next 10 usernames in alphabetical order
+```
+
+### Index user data so it can be matched in a search
+```ts
+const user = await identity.user.get("my-user") // Get a user
+await user.setItems(
+  { firstName: "Jane", lastName: "Doe", age: 28 }, // set values for custom keys 'firstName', 'lastName', and 'age'
+  true // Tell the backend to create an index of all 3 items, so they can be matched during a search operation
+) 
+```
+
+### Search for users
+Note that the search only looks at user data that was added using the setItems() method with indexing explicitly enabled.
+```ts
+const firstTenUsernames = await identity.user.list(0, 10, "jane doe") // get the first 10 usernames with indexed data matching the search string, in order of relevance
+const secondTenUsernames = await identity.user.list(10, 10, "jane.doe@example.com") // get the next 10 usernames with indexed data matching the search string, in order of relevance
+```
+
 ### Get names of groups the user is a member of
 ```ts
 const user = await identity.user.get("my-user") // Get an existing user
@@ -216,6 +243,12 @@ const isMember = await group.hasMember(user) // Resolves to true if the user is 
 const group = await identity.group.get("my-group") // Get an existing group
 const user = await identity.user.get("my-user") // Get an existing user
 await group.removeMember(user) // Removes the user from the group
+```
+
+### List group names
+```ts
+const firstTenGroupNames = await identity.group.list(0, 10) // Get the first ten group names in alphabetical order
+const secondTenGroupNames = await identity.group.list(10, 10) // Get the next ten group names in alphabetical order
 ```
 
 ### Remove a group
@@ -421,4 +454,3 @@ const memberList = await identity.group.listMembers() // will still correctly co
 
 # ToDos
 - Add tests to all methods that update or delete from the database to make sure only the desired row is affected
-- Add method to list all groups with paging functionality

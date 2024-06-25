@@ -58,6 +58,35 @@ test("Creates a group", async () => {
   }
 })
 
+test("Lists groups", async () => {
+  await groupAdmin.create("b-test-group")
+  await groupAdmin.create("a-test-group")
+
+  {
+    const groupNames = await groupAdmin.list(0, 10)
+    expect(groupNames).toEqual([
+      "a-test-group",
+      "b-test-group",
+      "test-group",
+    ])
+  }
+  {
+    const groupNames = await groupAdmin.list(0, 1)
+    expect(groupNames).toEqual(["a-test-group"])
+  }
+  {
+    const groupNames = await groupAdmin.list(1, 1)
+    expect(groupNames).toEqual(["b-test-group"])
+  }
+  {
+    const groupNames = await groupAdmin.list(1, 2)
+    expect(groupNames).toEqual(["b-test-group", "test-group"])
+  }
+
+  await groupAdmin.remove("b-test-group")
+  await groupAdmin.remove("a-test-group")
+})
+
 test("Gets a group", async () => {
   const group = await groupAdmin.get("test-group")
   expect(group).toBeInstanceOf(Group)
